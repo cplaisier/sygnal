@@ -18,6 +18,29 @@
 # Copyrighted by Chris Plaisier  5/21/2012                      #
 #################################################################
 
+from math import log10
+import cPickle, os, re, sys
+from multiprocessing import Pool, cpu_count, Manager
+from subprocess import *
+import subprocess
+from shutil import rmtree
+from copy import deepcopy
+
+import rpy2.robjects as robj
+from rpy2.robjects import FloatVector
+
+
+# Custom offYerBack libraries
+from cMonkeyWrapper import cMonkeyWrapper
+from pssm import pssm
+from miRvestigator import miRvestigator
+from tomtom import tomtom
+# Functions needed to run this script
+from utils import *
+from sys import stdout, exit
+#from weeder import *
+import gzip
+
 
 #################################################################
 ## Parameters                                                  ##
@@ -40,6 +63,9 @@ fpcFile = 'biclusterFirstPrincComponents.csv'
 subsets = ['all','exhausted','exhausted_noCD44','localization','localization_noCD44']
 subsetsPos = {'all':[0,37],'exhausted':[0,20],'exhausted_noCD44':[4,20],'localization':[24,37],'localization_noCD44':[28,37]}
 #randPssmsDir = 'randPSSMs'
+
+SYNONYM_PATH = '../synonymThesaurus.csv.gz'
+MIRNA_FASTA_PATH = 'miRNA/mmu.mature.fa'  # Need to update this to the latest database
 
 
 #################################################################
@@ -217,56 +243,14 @@ def TomTom(num, distMeth='ed', qThresh='1', minOverlap=6):
 def runTomTom(i):
     TomTom(i, distMeth='ed', qThresh='1', minOverlap=6) #blic5
 
-def phyper(q, m, n, k):
-    # Get an array of values to run
-    rProc = Popen('R --no-save --slave', shell=True, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    runMe = []
-    for i in range(len(q)):
-        runMe.append('phyper('+str(q[i])+','+str(m[i])+','+str(n[i])+','+str(k[i])+',lower.tail=F)')
-    runMe = '\n'.join(runMe)+'\n'
-    out = rProc.communicate(runMe)
-    return [line.strip().split(' ')[1] for line in out[0].strip().split('\n') if line]
 
-"""
-# Get first principle component
-def firstPrincipalComponent(matrix):
-    ""
-    Cacluate the first prinicipal component of a gene expression matrix.
-    Input: Expression matrix gene (rows) x conditions (columns), expects that the
-        python equivalent will be an array of arrays of expression values (rows).
-    Returns: Array of first prinicipal component and variance explained by first
-        principal component.
-    ""
-    # Fire up R
-    rProc = Popen('R --no-save --slave', shell=True, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    runMe = []
-    # Make the data into an R matrix
-    rbind = 'm1 = rbind('
-    rbind += ','.join(['c('+','.join([str(i) for i in row])+')' for row in matrix])
-    rbind += ')'
-    runMe.append(rbind)
-    # Compute first principal component
-    runMe.append('tmp.pc = try(princomp(t(m1)),TRUE)')
-    runMe.append('pc.1 = NA')
-    runMe.append('var.exp = NA')
-    runMe.append('if(!class(tmp.pc)==\'try-error\') {')
-    runMe.append('    pc.1 = tmp.pc$scores[,1]')
-    runMe.append('    var.exp = ((tmp.pc$sdev^2)/sum(tmp.pc$sdev^2))[1]')
-    runMe.append('}')
-    runMe.append('var.exp')
-    runMe.append('pc.1')
-    runMe = '\n'.join(runMe)+'\n'
-    out = rProc.communicate(runMe)
-    # Process output
-    splitUp = out[0].strip().split('\n')
-    splitUp.pop(0) # Get rid of header dealie
-    varExp = float(splitUp.pop(0).strip())
-    pc1 = []
-    for r1 in splitUp:
-        pc1 += [float(i) for i in r1.split(' ') if i and (not i.count('[')==1)]
-    # Return output
-    return [pc1, varExp]
-"""
+def phyper(q, m, n, k, lower_tail=False):
+    """calls the R function phyper, input values are lists and returns a list"""
+    r_phyper = robj.r['phyper']
+    kwargs = {'lower.tail': lower_tail}
+    return [f for f in 
+            r_phyper(FloatVector(q), FloatVector(m), FloatVector(n), FloatVector(k), **kwargs)]
+
 
 # Get a correlation p-value from R
 def correlation(a1, a2):
@@ -322,87 +306,64 @@ def survival(survival, dead, pc1, age):
     pValue2 = float((splitUp[3].split(' '))[1])
     return [[z1, pValue1], [z2, pValue2]]
 
-# To test the survival function
-#survival([10,20,30,10,15], ['DEAD','ALIVE','ALIVE','DEAD','ALIVE'], [0.1,0.25,0.4,0.6,0.9], [25,35,45,55,65])
-
-#################################################################
-## Python Modules Loading                                      ##
-#################################################################
-
-# Default python libraries
-from math import log10
-import cPickle, os, re, sys
-from multiprocessing import Pool, cpu_count, Manager
-from subprocess import *
-import subprocess
-from shutil import rmtree
-from copy import deepcopy
-# Custom offYerBack libraries
-from cMonkeyWrapper import cMonkeyWrapper
-from pssm import pssm
-from miRvestigator import miRvestigator
-from tomtom import tomtom
-# Functions needed to run this script
-from utils import *
-from sys import stdout, exit
-#from weeder import *
-import gzip
 
 
-#################################################################
-## Preparing directories for output                            ##
-#################################################################
-if not os.path.exists('output'):
-    os.makedirs('output')
+def sygnal_init():
+    """Preparing directories for output"""
+    if not os.path.exists('output'):
+        os.makedirs('output')
 
 
-#################################################################
-## Load synonym thesaurus to get UCSC ID to Entrez ID          ##
-#################################################################
-def is_number(s):
-    try:
-        float(s)
-        return True
-    except ValueError:
-        return False
+def read_synonyms():
+    """ Load synonym thesaurus to get UCSC ID to Entrez ID"""
+    def is_number(s):
+        try:
+            float(s)
+            return True
+        except ValueError:
+            return False
 
-ucsc2entrez = {}
-entrez2ucsc = {}
-inFile = gzip.open('../synonymThesaurus.csv.gz','r')
-while 1:
-    line = inFile.readline()
-    if not line:
-        break
-    splitUp = line.strip().split(',')
-    ucscId = splitUp[0]
-    entrez = [i for i in splitUp[1].split(';') if is_number(i)]
-    if len(entrez)==1:
-        ucsc2entrez[ucscId] = entrez[0]
-        if not entrez[0] in entrez2ucsc:
-            entrez2ucsc[entrez[0]] = [ucscId]
-        else:
-            entrez2ucsc[entrez[0]].append(ucscId)
-inFile.close()
+    ucsc2entrez = {}
+    entrez2ucsc = {}
+
+    with gzip.open(SYNONYM_PATH, 'r') as infile:
+        for line in infile:
+            splitUp = line.strip().split(',')
+            ucscId = splitUp[0]
+            entrez = [i for i in splitUp[1].split(';') if is_number(i)]
+            if len(entrez)==1:
+                ucsc2entrez[ucscId] = entrez[0]
+                if not entrez[0] in entrez2ucsc:
+                    entrez2ucsc[entrez[0]] = [ucscId]
+                else:
+                    entrez2ucsc[entrez[0]].append(ucscId)
+    return ucsc2entrez, entrez2ucsc
 
 
-#######################################################################
-## Create a dictionary to convert the miRNAs to there respective ids ##
-#######################################################################
-inFile = open('miRNA/mmu.mature.fa','r')  # Need to update this to the latest database
-miRNAIDs = {}
-miRNAIDs_rev = {}
+def miRNA_mappings():
+    """Create a dictionary to convert the miRNAs to there respective ids"""
+    miRNAIDs = {}
+    miRNAIDs_rev = {}
+
+    with open(MIRNA_FASTA_PATH, 'r') as infile:
+        for line in infile:
+            splitUp = line.split(' ')
+            if not splitUp[1] in miRNAIDs_rev:
+                miRNAIDs_rev[splitUp[1]] = splitUp[0].lower()
+
+            if not splitUp[0].lower() in miRNAIDs:
+                miRNAIDs[splitUp[0].lower()] = splitUp[1]
+            else:
+                print 'Uh oh!', splitUp
+    return miRNAIDs, miRNAIDs_rev
+
+
+sygnal_init()
+ucsc2entrez, entrez2ucsc = read_synonyms()
+miRNAIDs, miRNAIDs_rev = miRNA_mappings()
+
+
 clusterFileNames = {}
-while 1:
-    inLine = inFile.readline()
-    if not inLine:
-        break
-    splitUp = inLine.split(' ')
-    if not splitUp[1] in miRNAIDs_rev:
-        miRNAIDs_rev[splitUp[1]] = splitUp[0].lower()
-    if not splitUp[0].lower() in miRNAIDs:
-        miRNAIDs[splitUp[0].lower()] = splitUp[1]
-    else:
-        print 'Uh oh!',splitUp
 
 if not os.path.exists('output/c1_all.pkl'):
     #################################################################
@@ -479,7 +440,7 @@ if not os.path.exists('output/c1_all.pkl'):
             # Then run MEME using all cores available
             print 'Running MEME on Upstream sequences...'
             cpus = cpu_count()
-            print 'There are', cpus,'CPUs avialable.'
+            print 'There are %d CPUs available.' % cpus
             pool = Pool(processes=cpus)
             pool.map(runMeme,[i for i in o1])
             pool.close()
@@ -744,7 +705,7 @@ if not os.path.exists('output/c1_all.pkl'):
             cpus = cpu_count()
             biclustIds = biclusters.keys()
             pool = Pool(processes=cpus)
-            res1 = pool.map(clusterHypergeo_tfbs,biclustIds)
+            res1 = pool.map(clusterHypergeo_tfbs, biclustIds)
             pool.close()
             pool.join()
 
@@ -1090,32 +1051,24 @@ if not os.path.exists('output/c1_postProc.pkl'):
             exit(1)
 
     # Read in bicluster eigengene
-    inFile = open('output/biclusterEigengenes.csv','r')
-    biclustEigengenes = {}
-    patients = [i.strip('"') for i in inFile.readline().strip().split(',')]
-    patients.pop(0) # Get rid of rowname placeholder
-    while 1:
-        line = inFile.readline()
-        if not line:
-            break
-        eigengene = line.strip().split(',')
-        bicluster = int(eigengene.pop(0).strip('"'))
-        b1 = c1.getBicluster(bicluster)
-        b1.addAttribute('pc1', dict(zip(patients,eigengene)))
-    inFile.close()
+    with open('output/biclusterEigengenes.csv','r') as inFile:
+        biclustEigengenes = {}
+        patients = [i.strip('"') for i in inFile.readline().strip().split(',')]
+        patients.pop(0) # Get rid of rowname placeholder
+        for line in inFile:
+            eigengene = line.strip().split(',')
+            bicluster = int(eigengene.pop(0).strip('"'))
+            b1 = c1.getBicluster(bicluster)
+            b1.addAttribute('pc1', dict(zip(patients, eigengene)))
 
     # Read in bicluster variance explained
-    inFile = open('output/biclusterVarianceExplained.csv','r')
-    inFile.readline() # Get rid of header
-    while 1:
-        line = inFile.readline()
-        if not line:
-            break
-        varExplained = line.strip().split(',')
-        bicluster = int(varExplained.pop(0).strip('"'))
-        b1 = c1.getBicluster(bicluster)
-        b1.addAttribute('pc1.var.exp',varExplained[0])
-    inFile.close()
+    with open('output/biclusterVarianceExplained.csv','r') as inFile:
+        inFile.readline() # Get rid of header
+        for line in inFile:
+            varExplained = line.strip().split(',')
+            bicluster = int(varExplained.pop(0).strip('"'))
+            b1 = c1.getBicluster(bicluster)
+            b1.addAttribute('pc1.var.exp',varExplained[0])
 
     """
     # Load the phenotype information
@@ -1140,6 +1093,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
         def cleanName(name):
             splitUp = name.split('.')
             return splitUp[0]+'.'+splitUp[1]+'.'+splitUp[2]
+
         attributes = {}
         print ' Postprocessing cluster:', bicluster
         b1 = c1.getBicluster(bicluster)
@@ -1153,23 +1107,6 @@ if not os.path.exists('output/c1_postProc.pkl'):
         matrix = [[ratios[gene][condition] for condition in conditions] for gene in genes]
         # Get first principal component variance explained
         fpc = b1.getAttribute('pc1')
-        """
-        # Corrleation with patient traits
-        cleanNames = dict(zip([cleanName(i) for i in conditions],conditions))
-        cond2 = set(cleanNames.keys()).intersection(phenotypes['SURVIVAL'].keys())
-        pc1_1 = [fpc[cleanNames[i]] for i in cond2]
-        for phenotype in ['AGE','SEX.bi','chemo_therapy','radiation_therapy']:
-            p1_1 = [phenotypes[phenotype][i] for i in cond2]
-            cor1 = correlation(pc1_1, p1_1)
-            attributes[phenotype] = dict(zip(['rho','pValue'],cor1))
-        # Association of bicluster expression with patient survival
-        surv = [phenotypes['SURVIVAL'][i] for i in cond2]
-        dead = [phenotypes['DEAD'][i] for i in cond2]
-        age = [phenotypes['AGE'][i] for i in cond2]
-        s1 = survival(surv, dead, pc1_1, age)
-        attributes['Survival'] = dict(zip(['z','pValue'],s1[0]))
-        attributes['Survival.AGE'] = dict(zip(['z','pValue'],s1[1]))
-        """
         return attributes
 
     if not os.path.exists('output/postProcessed.pkl'):
@@ -1179,23 +1116,23 @@ if not os.path.exists('output/c1_postProc.pkl'):
         biclustIds = c1.getBiclusters()
         #print postProcess(1)
         pool = Pool(processes=cpus)
-        res1 = pool.map(postProcess,biclustIds)
+        res1 = pool.map(postProcess, biclustIds)
         pool.close()
         pool.join()
         print 'Done.\n'
+
         # Dump res1 into a pkl
-        pklFile = open('output/postProcessed.pkl','wb')
-        cPickle.dump(res1, pklFile)
+        with open('output/postProcessed.pkl','wb') as pklFile:
+            cPickle.dump(res1, pklFile)
     else:
-        pklFile = open('output/postProcessed.pkl','rb')
-        res1 = cPickle.load(pklFile)
-    pklFile.close()
+        with open('output/postProcessed.pkl','rb') as pklFile:
+            res1 = cPickle.load(pklFile)
 
     # Put results in cMonkey object
     for entry in res1:
         b1 = c1.getBicluster(entry['k'])
         for attribute in entry:
-            if not attribute=='k':
+            if not attribute == 'k':
                 b1.addAttribute(attribute, entry[attribute])
 
     #################################################################
@@ -1205,10 +1142,12 @@ if not os.path.exists('output/c1_postProc.pkl'):
     # Make needed directories
     if os.path.exists('tmp'):
         rmtree('tmp')
+
     if not os.path.exists('tmp/tomtom_out'):
         os.makedirs('tmp/tomtom_out')
     pssms = c1.getPssmsUpstream()
     upstreamMatches = {}
+
     if not os.path.exists('output/upstreamJasparTransfacComparison.pkl'):
         # Load JASPAR CORE Vertebarata motifs
         pklFile = open('motifs/jasparCoreVertebrata_redundant.pkl','rb')
@@ -1461,85 +1400,6 @@ if not os.path.exists('output/c1_postProc.pkl'):
                                 correlatedFactor[subset].append({'factor':factor2,'rho':corMax[0],'pValue':corMax[1]})
         b1.addAttribute('tfbs_db_correlated',correlatedFactor)
     print 'Done.\n'
-    
-    """#################################################################
-    ## Get permuted p-values for upstream meme motifs              ##
-    #################################################################
-    # Make needed directories
-    if os.path.exists('tmp'):
-        rmtree('tmp')
-    if not os.path.exists('tmp/tomtom_out'):
-        os.makedirs('tmp/tomtom_out')
-    # Compare the random motifs to the original motif in TOMTOM
-    permPValues = {}
-    matched = 0
-    pssms = c1.getPssmsUpstream(de_novo_method='meme')
-    if not os.path.exists('output/upstreamMotifPermutedPValues.csv'):
-        outFile = open('output/upstreamMotifPermutedPValues.csv','w')
-        outFile.write('Motif Name,Region,Original E-Value,Consensus,Permuted E-Value < 10,Similar,Total Permutations,Permuted P-Value')
-        pssmsNames = pssms.keys()
-        print 'Loading precached random PSSMs...'
-        randPssmsDict = {}
-        for i in [5,10,15,20,25,30,35,40,45,50,55,60,65]:
-            stdout.write(str(i)+' ')
-            stdout.flush()
-            pklFile = open(str(randPssmsDir)+'/pssms_upstream_'+str(i)+'.pkl','rb')
-            randPssmsDict[i] = cPickle.load(pklFile)
-            r1 = [randPssmsDict[i][pssm1].setMethod('meme') for pssm1 in randPssmsDict[i]]
-            delMes = []
-            for randPssm in randPssmsDict[i]:
-                if not float(randPssmsDict[i][randPssm].getEValue()) <= float(maxEValue):
-                    delMes.append(randPssm)
-            for j in delMes:
-                del randPssmsDict[i][j]
-
-        print '\nMaking files...'
-        for i in range(len(pssms)):
-            clustSize = randPSSMClustSize((c1.getBicluster(int(pssmsNames[i].split('_')[0]))).getNumGenes())
-            makeFiles(nucFreqs=c1.getNucFreqsUpstream(), queryPssms=[pssms[pssmsNames[i]]],targetPssms=randPssmsDict[clustSize].values(),num=i)
-
-        # Run this using all cores available
-        cpus = cpu_count()
-        print 'There are', cpus,'CPUs avialable.'
-        print 'Running TOMTOM to compare PSSMs...'
-        pool = Pool(processes=cpus)
-        pool.map(runTomTom,range(len(pssms)))
-        pool.close()
-        pool.join()
-
-        print 'Reading in Tomtom run...'
-        for run in range(len(pssms)):
-            tomtomPValues = {}
-            outputFile = open('tmp/tomtom_out/tomtom'+str(run)+'.out','r')
-            output = outputFile.readlines()
-            outputFile.close()
-            # Now iterate through output and save data
-            output.pop(0) # Get rid of header
-            while len(output)>0:
-                outputLine = output.pop(0).strip().split('\t')
-                if len(outputLine)==10:
-                    tomtomPValues[outputLine[1]] = float(outputLine[3])
-            pValues = tomtomPValues.values()
-            similar = 0
-            for pValue in pValues:
-                if float(pValue) <= float(0.05):
-                    similar += 1
-            # Write out the results
-            mot = outputLine[0].split('_')[1]
-            permPValues[outputLine[0]] = { mot+'.consensus':str(pssms[outputLine[0]].getConsensusMotif()), mot+'.permutedEV<=10':str(len(pValues)), mot+'.similar':str(similar), mot+'.permPV':str(float(similar)/float(1000)) }
-            pssms[outputLine[0]].setPermutedPValue(str(float(similar)/float(1000)))
-            outFile.write('\n'+str(outputLine[0])+',upstream,'+str(pssms[outputLine[0]].getEValue())+','+str(pssms[outputLine[0]].getConsensusMotif())+','+str(len(pValues))+','+str(similar)+','+str(1000)+','+str(float(similar)/float(1000)))
-        outFile.close()
-    else:
-        print 'Using precalculated upstream p-values...'
-        inFile = open('output/upstreamMotifPermutedPValues.csv','r')
-        inFile.readline()
-        upPValues = [i.strip().split(',') for i in inFile.readlines()]
-        inFile.close()
-        for line in upPValues:
-            pssms[line[0]].setPermutedPValue(str(float(line[7])/float(1000)))
-    print 'Done.\n'
-    """
 
     #################################################################
     ## Compare 3' UTR Weeder Motifs to miRBase using miRvestigator ##
@@ -1591,102 +1451,6 @@ if not os.path.exists('output/c1_postProc.pkl'):
                 pssms[m1].addMatch(factor=m2, confidence=miRNA_matches[m1]['model'])
     pklFile.close()
 
-    # Compile results to put them into the postProcessed
-    """print 'Get perumted p-values for 3\' UTR motifs...'
-    pklFile = open('randPSSMs/weederRand.pkl','rb')
-    weederRand = cPickle.load(pklFile)
-    pklFile.close()
-    pklFile = open('randPSSMs/weederRand_all.pkl','rb')
-    weederRand_all = cPickle.load(pklFile)
-    pklFile.close()
-    clustSizes = sorted(weederRand['8bp'].keys())
-    for pssm1 in pssms:
-        seqNum = pssms[pssm1].getNumGenes()
-        consensus = pssms[pssm1].getConsensusMotif()
-        width = len(consensus)
-        splitUp = pssm1.split('_')
-        clustInd = 5
-        for c in clustSizes:
-            if seqNum > c:
-                clustInd = c
-        pValue = float(sum(1 for i in weederRand[str(width)+'bp'][clustInd] if float(i) >= float(pssms[pssm1].getEValue())))/float(len(weederRand[str(width)+'bp'][clustInd]))
-        pValue_all = float(sum(1 for i in weederRand_all[str(width)+'bp'][clustInd] if float(i) >= float(pssms[pssm1].getEValue())))/float(len(weederRand_all[str(width)+'bp'][clustInd]))
-        pssms[pssm1].setPermutedPValue({'pValue':pValue,'pValue_all':pValue_all})
-    print 'Done.\n'
-    """
-
-    """
-    #################################################################
-    ## Run replication p-values                                    ##
-    #################################################################
-    
-
-    def runReplication(repScript):
-        #stdErr = open('stdErr'+repScript+'.rep','w')
-        print '  Replication running for '+repScript+'...'
-        repProc = Popen('cd replication_'+repScript+'; R --no-save < replicationDatasetPermutation.R', shell=True, stdout=PIPE, stderr=PIPE)
-        output = repProc.communicate()[0].split('\n')
-        #stdErr.close()
-
-    # Run replication on all datasets
-    runEm = []
-    for i in ['French','REMBRANDT','GSE7696']:
-        if not os.path.exists('output/replicationPvalues_'+i+'.csv'):
-            runEm.append(i)
-    if len(runEm)>0:
-        print 'Run replication..'
-        # Run this using all cores available
-        cpus = cpu_count()
-        print 'There are', cpus,'CPUs avialable.'
-        pool = Pool(processes=cpus)
-        pool.map(runReplication,runEm)
-        pool.close()
-        pool.join()
-
-    #################################################################
-    ## Read in replication p-values                                ##
-    #################################################################
-    # Read in replication p-values - French Dataset      
-    # '','n.rows','overlap.rows','new.resid.norm.gbm','avg.norm.perm.resid.gbm','norm.perm.p.gbm','new.resid.norm.all','avg.norm.perm.resid.all','norm.perm.p.all','pc1.var.exp.gbm','avg.pc1.var.exp.gbm','pc1.perm.p.gbm','pc1.var.exp.all','avg.pc1.var.exp.all','pc1.perm.p.all','survival.gbm','survival.p.gbm','survival.age.gbm','survival.age.p.gbm','survival.all','survival.p.all','survival.age.all','survival.age.p.all'
-    print 'Loading replication p-values...'
-    inFile = open('output/replicationPvalues_French.csv','r')
-    inFile.readline()
-    while 1:
-        line = inFile.readline()
-        if not line:
-            break
-        splitUp = line.strip().split(',')
-        b1 = c1.getBicluster(int(splitUp[0].replace('"','')))
-        b1.addAttribute(key='replication_French',value={'French_new.resid.norm':splitUp[3], 'French_avg.resid.norm':splitUp[4], 'French_norm.perm.p':splitUp[5], 'French_pc1.var.exp':splitUp[9], 'French_avg.pc1.var.exp':splitUp[10], 'French_pc1.perm.p':splitUp[11], 'French_survival':splitUp[15], 'French_survival.p':splitUp[16], 'French_survival.age':splitUp[17], 'French_survival.age.p':splitUp[18]})
-        b1.addAttribute(key='replication_French_all',value={'French_all_new.resid.norm':splitUp[6], 'French_all_avg.resid.norm':splitUp[7], 'French_all_norm.perm.p':splitUp[8], 'French_all_pc1.var.exp':splitUp[12], 'French_all_avg.pc1.var.exp':splitUp[13], 'French_all_pc1.perm.p':splitUp[14], 'French_all_survival':splitUp[19], 'French_all_survival.p':splitUp[20], 'French_all_survival.age':splitUp[21], 'French_all_survival.age.p':splitUp[22]})
-    inFile.close()
-    # Read in replication p-values - REMBRANDT Dataset      
-    # "","n.rows","orig.resid","orig.resid.norm","overlap.rows","new.resid","avg.perm.resid","perm.p","new.resid.norm","avg.norm.perm.resid","norm.perm.p","survival","survival.p","survival.age","survival.age.p"
-    inFile = open('output/replicationPvalues_REMBRANDT.csv','r')
-    inFile.readline()
-    while 1:
-        line = inFile.readline()
-        if not line:
-            break
-        splitUp = line.strip().split(',')
-        b1 = c1.getBicluster(int(splitUp[0].replace('"','')))
-        b1.addAttribute(key='replication_REMBRANDT',value={'REMBRANDT_new.resid.norm':splitUp[3], 'REMBRANDT_avg.resid.norm':splitUp[4], 'REMBRANDT_norm.perm.p':splitUp[5], 'REMBRANDT_pc1.var.exp':splitUp[9], 'REMBRANDT_avg.pc1.var.exp':splitUp[10], 'REMBRANDT_pc1.perm.p':splitUp[11], 'REMBRANDT_survival':splitUp[15], 'REMBRANDT_survival.p':splitUp[16], 'REMBRANDT_survival.age':splitUp[17], 'REMBRANDT_survival.age.p':splitUp[18]})
-        b1.addAttribute(key='replication_REMBRANDT_all',value={'REMBRANDT_all_new.resid.norm':splitUp[6], 'REMBRANDT_all_avg.resid.norm':splitUp[7], 'REMBRANDT_all_norm.perm.p':splitUp[8], 'REMBRANDT_all_pc1.var.exp':splitUp[12], 'REMBRANDT_all_avg.pc1.var.exp':splitUp[13], 'REMBRANDT_all_pc1.perm.p':splitUp[14], 'REMBRANDT_all_survival':splitUp[19], 'REMBRANDT_all_survival.p':splitUp[20], 'REMBRANDT_all_survival.age':splitUp[21], 'REMBRANDT_all_survival.age.p':splitUp[22]})
-    # Read in replication p-values - GSE7696 Dataset
-    # '', 'n.rows','overlap.rows','new.resid.norm.gbm','avg.norm.perm.resid.gbm','norm.perm.p.gbm','pc1.var.exp.gbm','avg.pc1.var.exp.gbm','pc1.perm.p.gbm','survival.gbm','survival.p.gbm','survival.age.gbm','survival.age.p.gbm'
-    inFile = open('output/replicationPvalues_GSE7696.csv','r')
-    inFile.readline()
-    while 1:
-        line = inFile.readline()
-        if not line:
-            break
-        splitUp = line.strip().split(',')
-        b1 = c1.getBicluster(int(splitUp[0].replace('"','')))
-        b1.addAttribute(key='replication_GSE7696',value={'GSE7696_new.resid.norm':splitUp[3], 'GSE7696_avg.resid.norm':splitUp[4], 'GSE7696_norm.perm.p':splitUp[5], 'GSE7696_pc1.var.exp':splitUp[6], 'GSE7696_avg.pc1.var.exp':splitUp[7], 'GSE7696_pc1.perm.p':splitUp[8], 'GSE7696_survival':splitUp[9], 'GSE7696_survival.p':splitUp[10], 'GSE7696_survival.age':splitUp[11], 'GSE7696_survival.age.p':splitUp[12]})
-    inFile.close()
-    print 'Done.\n'
-    """
-
     ###########################################################################
     ## Run permuted p-value for variance epxlained first principal component ##
     ###########################################################################
@@ -1729,12 +1493,6 @@ if not os.path.exists('output/c1_postProc.pkl'):
         enrichProc = Popen("cd funcEnrichment; R --no-save < enrichment.R", shell=True, stdout=PIPE, stderr=PIPE)
         output = enrichProc.communicate()[0]
         print 'Done.\n'
-    """if not os.path.exists('output/jiangConrath_hallmarks.csv'):
-        print 'Run semantic similarity...'
-        enrichProc = Popen("cd funcEnrichment; R --no-save < goSimHallmarksOfCancer.R", shell=True, stdout=PIPE, stderr=PIPE)
-        output = enrichProc.communicate()[0]
-        print 'Done.\n'
-    """
 
     #################################################################
     ## Read in functional enrichment                               ##
@@ -1749,22 +1507,6 @@ if not os.path.exists('output/c1_postProc.pkl'):
         b1 = c1.getBicluster(int(line[0].strip('"')))
         b1.addAttribute(key='goTermBP',value=line[2].strip('"').split(';'))
     print 'Done.\n'
-
-    """
-    #################################################################
-    ## Read in hallmarks of cacner                                 ##
-    #################################################################
-    print 'Load Jiang-Conrath semantic similarity to Hallmarks of Cancer...'
-    inFile = open('output/jiangConrath_hallmarks.csv','r')
-    hallmarks = [i for i in inFile.readline().split(',') if not i.strip('"')=='']
-    inLines = inFile.readlines()
-    lines = [line.strip().split(',') for line in inLines]
-    inFile.close()
-    for line in lines:
-        b1 = c1.getBicluster(int(line[0].strip('"')))
-        b1.addAttribute(key='hallmarksOfCancer',value=dict(zip(hallmarks,line[1:])))
-    print 'Done.\n'
-    """
 
     #################################################################
     ## Save out the final cMonkey object so we don't lose progress ##
@@ -2017,50 +1759,12 @@ for i in sorted(c1.getBiclusters().keys()):
         else:
             writeMe += ['NA','NA','NA']
 
-    """
-    #   f. Associations with traits:  age, sex.bi, chemo_therapy, radiation_therapy
-    for association in ['AGE','SEX.bi', 'chemo_therapy','radiation_therapy']:
-        ass1 = b1.getAttribute(association)
-        writeMe += [str(ass1['rho']), str(ass1['pValue'])]
-    surv1 = b1.getAttribute('Survival') 
-    survAge1 = b1.getAttribute('Survival.AGE')
-    writeMe += [str(surv1['z']), str(surv1['pValue']), str(survAge1['z']), str(survAge1['pValue'])]
-
-    #   g. Replications:  'REMBRANDT_new.resid.norm','REMBRANDT_avg.resid.norm','REMBRANDT_norm.perm.p','REMBRANDT_survival','REMBRANDT_survival.p','REMBRANDT_survival.age','REMBRANDT_survival.age.p','GSE7696_new.resid.norm','GSE7696_avg.resid.norm','GSE7696_norm.perm.p','GSE7696_survival','GSE7696_survival.p','GSE7696_survival.age','GSE7696_survival.age.p'
-    replications_French = b1.getAttribute('replication_French')
-    replications_REMBRANDT = b1.getAttribute('replication_REMBRANDT')
-    replications_French_all = b1.getAttribute('replication_French_all')
-    replications_REMBRANDT_all = b1.getAttribute('replication_REMBRANDT_all')
-    replications_GSE7696 = b1.getAttribute('replication_GSE7696')
-    for replication in ['French_pc1.var.exp','French_avg.pc1.var.exp','French_pc1.perm.p','French_survival','French_survival.p','French_survival.age','French_survival.age.p']:
-        writeMe.append(str(replications_French[replication]))
-    for replication in ['French_all_pc1.var.exp','French_all_avg.pc1.var.exp','French_all_pc1.perm.p','French_all_survival','French_all_survival.p','French_all_survival.age','French_all_survival.age.p']:
-        writeMe.append(str(replications_French_all[replication]))
-    for replication in ['REMBRANDT_pc1.var.exp','REMBRANDT_avg.pc1.var.exp','REMBRANDT_pc1.perm.p','REMBRANDT_survival','REMBRANDT_survival.p','REMBRANDT_survival.age','REMBRANDT_survival.age.p']:
-        writeMe.append(str(replications_REMBRANDT[replication]))
-    for replication in ['REMBRANDT_all_pc1.var.exp','REMBRANDT_all_avg.pc1.var.exp','REMBRANDT_all_pc1.perm.p','REMBRANDT_all_survival','REMBRANDT_all_survival.p','REMBRANDT_all_survival.age','REMBRANDT_all_survival.age.p']:
-        writeMe.append(str(replications_REMBRANDT_all[replication]))
-    for replication in ['GSE7696_pc1.var.exp','GSE7696_avg.pc1.var.exp','GSE7696_pc1.perm.p','GSE7696_survival','GSE7696_survival.p','GSE7696_survival.age','GSE7696_survival.age.p']:
-        writeMe.append(str(replications_GSE7696[replication]))
-    """
-
-    #   h. Functional enrichment of biclusters using GO term Biological Processes
+    #   f. Functional enrichment of biclusters using GO term Biological Processes
     bfe1 = b1.getAttribute('goTermBP')
     if bfe1==['']:
         writeMe.append('NA')
     else:
         writeMe.append(';'.join(bfe1))
-
-    """
-    #   i. Hallmarks of Cancer:  Hanahan and Weinberg, 2011
-    bhc1 = b1.getAttribute('hallmarksOfCancer')
-    for hallmark in hallmarksOfCancer:
-        writeMe.append(str(bhc1[hallmark]))
-    """
-
-    #   j. Glioma sub-type enrichment: 'NON_TUMOR','ASTROCYTOMA','MIXED','OLIGODENDROGLIOMA','GBM'
-    #for overlap in ['NON_TUMOR','ASTROCYTOMA','MIXED','OLIGODENDROGLIOMA','GBM']:
-    #    writeMe.append(str(b1.getAttribute(overlap)))
     
     # Add to the final output file
     postOut.append(deepcopy(writeMe))
@@ -2088,260 +1792,3 @@ outFile.write('Bicluster,'+','.join([j.strip() for j in conditions])+'\n')
 outFile.write('\n'.join(fpcWrite))
 outFile.close()
 print 'Done.\n'
-
-"""
-names = ['id', 'k.rows', 'k.cols', 'resid', 'resid.norm', 'resid.norm.perm.p', 'motif1.E', 'motif1.consensus', 'motif1.matches', 'motif1.permutedEV<=10', 'motif1.permPV', 'motif2.E', 'motif2.consensus', 'motif2.matches', 'motif2.permutedEV<=10', 'motif2.permPV', '3pUTRmotif1.weederScore', '3pUTRmotif1.localPermP', '3pUTRmotif1.allPermP', '3pUTRmotif1.consensus', '3pUTRmotif1.miRNAs', '3pUTRmotif1.model', '3pUTR_pita.miRNAs', '3pUTR_pita.percTargets', '3pUTR_pita.pValue', '3pUTR_targetScan.miRNAs', '3pUTR_targetScan.percTargets', '3pUTR_targetScan.pValue', 'SEX.bi', 'SEX.bi.p', 'AGE', 'AGE.p', 'Survival', 'Survival.p', 'Survival.AGE', 'Survival.AGE.p', 'Survival.var', 'Survival.var.p', 'Survival.var.AGE', 'Survival.var.AGE.p','REMBRANDT_new.resid.norm','REMBRANDT_avg.resid.norm','REMBRANDT_norm.perm.p','REMBRANDT_survival','REMBRANDT_survival.p','REMBRANDT_survival.age','REMBRANDT_survival.age.p','GSE7696_new.resid.norm','GSE7696_avg.resid.norm','GSE7696_norm.perm.p','GSE7696_survival','GSE7696_survival.p','GSE7696_survival.age','GSE7696_survival.age.p','NON_TUMOR','ASTROCYTOMA','MIXED','OLIGODENDROGLIOMA','GBM']
-names2 = ['k.rows', 'k.cols', 'resid', 'resid.norm', 'norm.perm.p', 'motif1.E', 'motif1.consensus', 'motif1.matches', 'motif1.permutedEV<=10', 'motif1.permPV', 'motif2.E', 'motif2.consensus', 'motif2.matches', 'motif2.permutedEV<=10', 'motif2.permPV', '3pUTRmotif1.eValue', '3pUTRmotif1.permPV.local', '3pUTRmotif1.permPV.all', '3pUTRmotif1.consensus', '3pUTRmotif1.miRNAs', '3pUTRmotif1.model', '3pUTR_pita.miRNAs', '3pUTR_pita.percTargets', '3pUTR_pita.pValue', '3pUTR_targetScan.miRNAs', '3pUTR_targetScan.percTargets', '3pUTR_targetScan.pValue', 'SEX.bi', 'SEX.bi.p', 'AGE', 'AGE.p', 'Survival', 'Survival.p', 'Survival.AGE', 'Survival.AGE.p', 'Survival.var', 'Survival.var.p', 'Survival.var.AGE', 'Survival.var.AGE.p','REMBRANDT_new.resid.norm','REMBRANDT_avg.resid.norm','REMBRANDT_norm.perm.p','REMBRANDT_survival','REMBRANDT_survival.p','REMBRANDT_survival.age','REMBRANDT_survival.age.p','GSE7696_new.resid.norm','GSE7696_avg.resid.norm','GSE7696_norm.perm.p','GSE7696_survival','GSE7696_survival.p','GSE7696_survival.age','GSE7696_survival.age.p','NON_TUMOR','ASTROCYTOMA','MIXED','OLIGODENDROGLIOMA','GBM']
-
-#################################################################
-## Making SIF File for Cytoscape                               ##
-#################################################################
-# Upstream motif comparisons
-includedBiclusters = {}
-pssmsUp = {}
-pssms3p = {}
-pita = {}
-targetScan = {}
-# Here is where I will filter based upon:
-# 1. Survival <= ((0.05/720) = 6.94E-5)
-# 2. Bicluster residual permutations <= ((0.05/720) = 6.94E-5)
-# 3. A motif that fits one of the following:
-#   a. Upstream motif with E-value <= 10 and Permuted P-value <= 0.05
-#   b. 3' UTR motif with a perfect 8mer or 7mer match to miRBase miRNA seed sequence
-inside = 0
-m1 = 0
-m2 = 0
-wm = 0
-p = 0
-t = 0
-for i in range(720):
-    if (float(postProcessed[i+1]['Survival.AGE.p']) <= float(0.05)/float(720)) and (float(residPerms[i]) <= float(0.05)/float(720)) and (float(postProcessed[i+1]['resid.norm']) <= float(0.459)) and ((float(postProcessed[i+1]['REMBRANDT_norm.perm.p']) <= float(0.05)) or (float(postProcessed[i+1]['GSE7696_norm.perm.p']) <= float(0.05))): # and (i+1 in hallmarksOfCancer)
-        inside += 1
-        motif = 0
-        if not postProcessed[i+1]['motif1.E']=='NA' and (((float(postProcessed[i+1]['motif1.E']) <= float(10)) and (float(postProcessed[i+1]['motif1.permPV']) <= 0.05)) or ((float(postProcessed[i+1]['motif1.E']) <= float(10)) and (not postProcessed[i+1]['motif1.matches']=='NA')) or ((float(postProcessed[i+1]['motif1.permPV']) <= float(0.05)) and (not postProcessed[i+1]['motif1.matches']=='NA'))):
-            motif = 1
-            m1 += 1
-            pssmsUp[str(i+1)+'_motif1'] = c1.getBicluster(i+1).getPssmUpstream(str(i+1)+'_motif1')
-        if not postProcessed[i+1]['motif2.E']=='NA' and (((float(postProcessed[i+1]['motif2.E']) <= float(10)) and (float(postProcessed[i+1]['motif2.permPV']) <= 0.05)) or ((float(postProcessed[i+1]['motif2.E']) <= float(10)) and (not postProcessed[i+1]['motif2.matches']=='NA')) or ((float(postProcessed[i+1]['motif2.permPV']) <= float(0.05)) and (not postProcessed[i+1]['motif2.matches']=='NA'))):
-            motif = 1
-            m2 += 1
-            pssmsUp[str(i+1)+'_motif2'] = c1.getBicluster(i+1).getPssmUpstream(str(i+1)+'_motif2')
-        if not postProcessed[i+1]['3pUTRmotif1.model']=='NA':
-            motif = 1
-            wm += 1
-            pssms3p[str(i+1)+'_motif1'] = c1.getBicluster(i+1).getPssm3pUTR(str(i+1)+'_motif1')
-        if ((not postProcessed[i+1]['3pUTR_pita.miRNAs']=='NA') and (float(postProcessed[i+1]['3pUTR_pita.percTargets'])>=float(0.5))):
-            motif = 1
-            p += 1
-            pita[str(i+1)+'_pita'] = postProcessed[i+1]['3pUTR_pita.miRNAs']
-        if ((not postProcessed[i+1]['3pUTR_targetScan.miRNAs']=='NA') and (float(postProcessed[i+1]['3pUTR_targetScan.percTargets'])>=float(0.5))):
-            motif = 1
-            t += 1
-            targetScan[str(i+1)+'_targetScan'] = postProcessed[i+1]['3pUTR_targetScan.miRNAs']
-        if motif==1:
-            includedBiclusters[i+1] = c1.getBicluster(i+1)
-
-print inside, m1, m2, wm, p, t, len(includedBiclusters)
-
-
-# Identify similarity between upstream motifs using TomTom
-pValueThreshold = 0.05/((len(pssmsUp)**2)/2)
-tomtomUp = tomtom(pssmsUp.values(),pssmsUp.values(),c1.getNucFreqsUpstream(),'+ -',minOverlap=6)
-putMeUp = dict(zip(pssmsUp.keys(),range(len(pssmsUp))))
-pValues = []
-pssmPssmPairs = []
-for i in range(len(pssmsUp)):
-    pValues.append(range(len(pssmsUp)))
-for i in pssmsUp:
-    for j in pssmsUp:
-        pValue = tomtomUp.getScore(i,j)['pValue']
-
-        pValues[putMeUp[i]][putMeUp[j]] = pValue
-        if not i==j and float(pValue) <= float(pValueThreshold):
-            pssmPssmPairs.append([i+'_Up','mm',j+'_Up'])
-        if not i==j and not [i+'_Up','mm',j+'_Up'] in pssmPssmPairs and not postProcessed[int(i.split('_')[0])][i.split('_')[1]+'.matches']=='NA' and not postProcessed[int(j.split('_')[0])][j.split('_')[1]+'.matches']=='NA':
-            matched1 = 0
-            m1 = postProcessed[int(i.split('_')[0])][i.split('_')[1]+'.matches'].split(' ')
-            m2 = postProcessed[int(j.split('_')[0])][j.split('_')[1]+'.matches'].split(' ')
-            for match1 in m1:
-                for match2 in m2:
-                    if match1==match2:
-                        pssmPssmPairs.append([i+'_Up','mm',j+'_Up'])
-                        matched1 = 1
-                        break
-                if matched1 == 1:
-                    break
-
-# Also wouldn't hurt to add some connections between those motifs we identify via JASPAR and Transfac
-
-
-# Now write out the matrix to a csv file for import into R
-outFile = open('tmp/tomtom_pValuesUpstream.csv','w')
-pssmsNames = pssmsUp.keys()
-outFile.write(','+','.join(pssmsUp.keys()))
-for i in range(len(pValues)):
-    outFile.write('\n'+str(pssmsNames[i])+','+','.join(pValues[i]))
-outFile.close()
-if not os.path.exists('imgs'):
-    os.mkdir('imgs')
-
-# Plot PSSMs for all motifs
-pssmsUp = c1.getPssmsUpstream()
-for i in pssmsUp:
-    pssmsUp[i].plot('imgs/all_'+i.split('_')[0]+'_'+pssmsUp[i].getConsensusMotif()+'.png')
-
-pssmsUTR = c1.getPssms3pUTR()
-for i in pssmsUTR:
-    pssmsUTR[i].plot('imgs/all_'+i.split('_')[0]+'_'+pssmsUTR[i].getConsensusMotif()+'.png')
-
-
-# 3' UTR motif comparisons. Instead of using TOMTOM use miRvestigator
-p3UTRpssms = []
-links = {}
-motifNames = []
-for i in all_miRNA_matches.keys():
-    if i in pssms3p:
-        motifNames.append(i+'_3pUTR')
-    elif i in pita:
-        motifNames.append(i)
-    elif i in targetScan:
-        motifNames.append(i)
-for i in range(len(motifNames)):
-    for j in range(i+1,len(motifNames)):
-            doit = 0
-            if motifNames[i].split('_')[1]=='targetScan':
-                doit += 1
-            if motifNames[i].split('_')[1]=='pita':
-                doit += 1
-            if motifNames[j].split('_')[1]=='targetScan':
-                doit += 1
-            if motifNames[j].split('_')[1]=='pita':
-                doit += 1
-            if doit<=1 and len(all_miRNA_matches[motifNames[i].rstrip('_3pUTR')].intersection(all_miRNA_matches[motifNames[j].rstrip('_3pUTR')])) > 0:
-                m1 = ''
-                m2 = ''
-                if motifNames[i].split('_')[1]=='pita':
-                    m1 = pita[motifNames[i]]
-                elif motifNames[i].split('_')[1]=='targetScan':
-                    m1 = targetScan[motifNames[i]]
-                else:
-                    m1 = motifNames[i]
-                if motifNames[j].split('_')[1]=='pita':
-                    m1 = pita[motifNames[j]]
-                elif motifNames[j].split('_')[1]=='targetScan':
-                    m1 = targetScan[motifNames[j]]
-                else:
-                    m2 = motifNames[j]
-                pssmPssmPairs.append([m1,'mm',m2])
-
-# First make gene to bicluster links
-geneBiclusterPairs = []
-biclusterPssmPairs = []
-biclusterMiRNAPairs = []
-biclusterClinicalTraits = []
-biclusterClinicalTraitCorrelations = []
-biclusterClinicalTraitPvalues = []
-allGenes = []
-negBiclusters = []
-posBiclusters = []
-allPssmsUp = []
-allPssms3pUTR = []
-allPita = []
-allTargetScan = []
-clinicalTraits = []
-for i in includedBiclusters.keys():
-    bi = c1.getBicluster(i)
-    #if float(bi.getNormResidual())<=float(maxResidual):
-    #if float(bi.getScore())<=float(maxScore) and float(bi.getSurvival()['"Survival"']['pValue'])<=float(maxSurv) and float(bi.getNormResidual())<=float(maxResidual):
-    if float(bi.getSurvival()['"Survival.Age"']['zScore'])<0:
-        negBiclusters.append(bi.getName().replace(' ','_'))
-    else:
-        posBiclusters.append(bi.getName().replace(' ','_'))
-    # allBiclusters.append(bi.getName().replace(' ','_'))
-    # Then make bicluster to pssm links
-    tmpUp = bi.getPssmsUpstream()
-    for pssm in tmpUp:
-        if pssm.getName() in pssmsUp:
-            allPssmsUp.append(pssm.getName()+'_Up')
-            biclusterPssmPairs.append([bi.getName().replace(' ','_'),'bm',pssm.getName()+'_Up'])
-    tmp3p = bi.getPssms3pUTR()
-    for pssm in tmp3p:
-        if pssm.getName() in pssms3p:
-            allPssms3pUTR.append(pssm.getName()+'_3pUTR')
-            biclusterPssmPairs.append([bi.getName().replace(' ','_'),'bm',pssm.getName()+'_3pUTR'])
-    mirna_regulator = bi.getName().split(' ')[1]+'_pita'
-    if bi.getName().split(' ')[1]+'_pita' in pita.keys():
-        allPita.append(pita[mirna_regulator])
-        biclusterPssmPairs.append([bi.getName().replace(' ','_'),'bm',pita[mirna_regulator]])
-    mirna_regulator = bi.getName().split(' ')[1]+'_targetScan'
-    if bi.getName().split(' ')[1]+'_targetScan' in targetScan.keys():
-        allTargetScan.append(targetScan[mirna_regulator])
-        biclusterPssmPairs.append([bi.getName().replace(' ','_'),'bm',targetScan[mirna_regulator]])
-    genes = bi.getGenes()
-    for gene in genes:
-        allGenes.append(gene)
-        geneBiclusterPairs.append([gene,'gb',bi.getName().replace(' ','_')])
-    # Then add the clinical traits
-    cor1 = bi.getCorrelations()
-    clinicalTraits = cor1.keys()
-    for trait in cor1:
-        biclusterClinicalTraits.append([bi.getName().replace(' ','_'),'bt',trait])
-        biclusterClinicalTraitCorrelations.append([bi.getName().replace(' ','_'),cor1[trait]['cor'],trait])
-        if float(cor1[trait]['pValue'])==float(0):
-            pValue = 50 # This means the p-value is 0, which can't happen. But it is below R's capabilities to compute.
-        else:
-            pValue = -log10(float(cor1[trait]['pValue']))
-        biclusterClinicalTraitPvalues.append([bi.getName().replace(' ','_'),str(pValue),trait])
-    
-# Write SIF file
-sifFile = open('cMonkey.sif','w')
-sifFile.write('\n'.join(['\t'.join(nEn) for nEn in geneBiclusterPairs]))
-sifFile.write('\n'+'\n'.join(['\t'.join(nEn) for nEn in biclusterPssmPairs]))
-sifFile.write('\n'+'\n'.join(['\t'.join(nEn) for nEn in uniquify(pssmPssmPairs)]))
-#sifFile.write('\n'+'\n'.join(['\t'.join(nEn) for nEn in uniquify(biclusterClinicalTraits)]))
-sifFile.close()
-
-# Write node attribute file
-nodeAttFile = open('cMonkey_nodeAtt.txt','w')
-nodeAttFile.write('geneBiclustPssm (class=Double)')
-# nodeAttFile.write('Node Type')
-allGenes = [[gene,' = 1'] for gene in allGenes]
-nodeAttFile.write('\n'+'\n'.join([''.join(att) for att in allGenes]))
-posBiclusters = [[bi,' = 2'] for bi in posBiclusters]
-nodeAttFile.write('\n'+'\n'.join([''.join(att) for att in posBiclusters]))
-negBiclusters = [[bi,' = 3'] for bi in negBiclusters]
-nodeAttFile.write('\n'+'\n'.join([''.join(att) for att in negBiclusters]))
-allPssmsUp1 = [[pssm,' = 4'] for pssm in allPssmsUp]
-nodeAttFile.write('\n'+'\n'.join([''.join(att) for att in allPssmsUp1]))
-allPssms3pUTR1 = [[pssm,' = 5'] for pssm in allPssms3pUTR]
-nodeAttFile.write('\n'+'\n'.join([''.join(att) for att in allPssms3pUTR1]))
-allPita = [[pssm,' = 6'] for pssm in allPita]
-nodeAttFile.write('\n'+'\n'.join([''.join(att) for att in allPita]))
-allTargetScan = [[pssm,' = 7'] for pssm in allTargetScan]
-nodeAttFile.write('\n'+'\n'.join([''.join(att) for att in allTargetScan]))
-#clinicalTraits = [[trait,' = 5'] for trait in clinicalTraits]
-#nodeAttFile.write('\n'+'\n'.join([''.join(att) for att in clinicalTraits]))
-nodeAttFile.close()
-
-# Make node attribute file to add imgs for motifs
-nodeAttFile = open('cMonkey_nodeAtt_imgs.txt','w')
-nodeAttFile.write('imgs (class=string)')
-allPssmsUp1 = [[pssm,' = file:///C:/Users/cplaisie/Desktop/glioma_final/network/final/imgs/',(str(pssm)+'.png')] for pssm in allPssmsUp]
-nodeAttFile.write('\n'+'\n'.join([''.join(att) for att in allPssmsUp1]))
-allPssms3pUTR1 = [[pssm,' = file:///C:/Users/cplaisie/Desktop/glioma_final/network/final/imgs/',(str(pssm)+'.png')] for pssm in allPssms3pUTR]
-nodeAttFile.write('\n'+'\n'.join([''.join(att) for att in allPssms3pUTR1]))
-nodeAttFile.close()
-
-# Write node attribute file
-edgeAttFile = open('cMonkey_edgeAtt_corClinicalTraits.txt','w')
-edgeAttFile.write('corelationClinicalTraits (class=Double)')
-writeMe = [str(edge[0])+' (bt) '+str(edge[2])+' = '+str(edge[1]) for edge in biclusterClinicalTraitCorrelations]
-edgeAttFile.write('\n'+'\n'.join(writeMe))
-edgeAttFile.close()
-
-edgeAttFile = open('cMonkey_edgeAtt_pValClinicalTraits.txt','w')
-edgeAttFile.write('pValueClinicalTraits (class=Double)')
-writeMe = [str(edge[0])+' (bt) '+str(edge[2])+' = '+str(edge[1]) for edge in biclusterClinicalTraitPvalues]
-edgeAttFile.write('\n'+'\n'.join(writeMe))
-edgeAttFile.close()
-"""
