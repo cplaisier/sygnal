@@ -1,0 +1,9 @@
+output*
+*.pyc
+seqs
+TF
+tmp
+motifs
+expression
+FreqFiles
+miRNA
