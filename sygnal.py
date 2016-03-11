@@ -1223,8 +1223,8 @@ if not os.path.exists('output/c1_postProc.pkl'):
     # Read in tfFamilies.csv for expanded list of possible TFs
     tfFamilies = {}
     with open('TF/tfFamilies_musculus.csv','r') as infile:
-        inFile.readline() # Get rid of header
-        for line in inFile:
+        infile.readline() # Get rid of header
+        for line in infile:
             splitUp = line.strip().split(',')
             tmp = []
             for i in splitUp[2].split(' '):
