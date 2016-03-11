@@ -7,3 +7,6 @@ motifs
 expression
 FreqFiles
 miRNA
+replication_*
+randPSSMs
+extras

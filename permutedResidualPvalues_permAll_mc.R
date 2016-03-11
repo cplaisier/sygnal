@@ -25,7 +25,6 @@ residual.norm <- function( rats, maxRowVar ) {
   average.r <- average.r / row.var
   average.r
 }
-
 getEigengene <- function (expr, rows, impute = TRUE, nPC = 1, align = "along average", 
     excludeGrey = FALSE, grey = ifelse(is.numeric(rows), 0, 
         "grey"), subHubs = FALSE, trapErrors = FALSE, returnValidOnly = trapErrors, 
@@ -110,71 +109,48 @@ for(j in 1:length(d1[,1])) {
 }
 
 # Read in expression ratios file
-ratios <- read.delim( file='../norm_gexp_preprocessed_comb_all_ucsc_SUBSET_vRedundant.tsv', sep="\t", as.is=T, header=T,row.names=1 )
-#rownames(ratios) <- toupper(rownames(ratios))
+ratios <- read.delim( file=gzfile('../gbmTCGA_exprMat_medianFiltered.csv.gz'), sep=",", as.is=T, header=T,row.names=1 )
+rownames(ratios) <- toupper(rownames(ratios))
 maxRowVar = mean( apply( ratios, 1, var, use="pair" ), na.rm=T )
 
 # Calculate the residuals for all clusters in the second dataset
 ks = length(biclustMembership.gene)
-outNames = c('bicluster','n.rows','n.cols','orig.resid','avg.perm.resid','perm.p','orig.resid.norm','avg.norm.perm.resid','norm.perm.p','pc1.var.exp','avg.pc1.var.exp','pc1.perm.p','pc1.var.exp.exh','avg.pc1.var.exp.exh','pc1.perm.p.exh','pc1.var.exp.loc','avg.pc1.var.exp.loc','pc1.perm.p.loc','pc1.var.exp.exh_noCD44','avg.pc1.var.exp.exh_noCD44','pc1.perm.p.exh_noCD44','pc1.var.exp.loc_noCD44','avg.pc1.var.exp.loc_noCD44','pc1.perm.p.loc_noCD44')
+outNames = c('n.rows','n.cols','orig.resid','avg.perm.resid','perm.p','orig.resid.norm','avg.norm.perm.resid','norm.perm.p','pc1.var.exp','avg.pc1.var.exp','pc1.perm.p')
 m1 = matrix(ncol=length(outNames),nrow=ks,dimnames=list(1:ks,outNames))
 #permutations = 1/0.05*ks
 permutations = 1000
 print(paste('Running ',permutations,' permutations...',sep=''))
-exhSubset = c(1:20)
-locSubset = c(21:37)
-exhSubset_noCD44 = c(5:20)
-locSubset_noCD44 = c(25:37)
 m1 = do.call(rbind, mclapply(1:ks, function(k) {
-        r1 = rep(NA,23)
-        #r1[1] = k
+        r1 = rep(NA,12)
+        r1[1] = k
         # Get and add number of rows and columns
         k.rows = biclustMembership.gene[[k]]
         k.cols = biclustMembership.cond[[k]]
         if(length(k.rows)>1 && length(k.cols)>1) {
-            r1[1] = length(k.rows)
-            r1[2] = length(k.cols)
-            r1[3] = residual(as.matrix(ratios[k.rows,k.cols]))
-            sub = sapply(1:permutations, function(i) { residual(as.matrix(ratios[sample(rownames(ratios),r1[1]), sample(colnames(ratios),r1[2])])) })
-            r1[4] = mean(sub)
-            r1[5] = length(which(sub <= r1[3]))/permutations
-            r1[6] = residual.norm(as.matrix(ratios[k.rows,k.cols]),maxRowVar)
-            sub = sapply(1:permutations, function(i) { residual.norm(as.matrix(ratios[sample(rownames(ratios),r1[1]), sample(colnames(ratios),r1[2])]), maxRowVar) })
-            r1[7] = mean(sub)
-            r1[8] = length(which(sub <= r1[6]))/permutations
+            r1[2] = length(k.rows)
+            r1[3] = length(k.cols)
+            r1[4] = residual(as.matrix(ratios[k.rows,k.cols]))
+            sub = sapply(1:permutations, function(i) { residual(as.matrix(ratios[sample(rownames(ratios),r1[2]), sample(colnames(ratios),r1[3])])) })
+            r1[5] = mean(sub)
+            r1[6] = length(which(sub <= r1[4]))/permutations
+            r1[7] = residual.norm(as.matrix(ratios[k.rows,k.cols]),maxRowVar)
+            sub = sapply(1:permutations, function(i) { residual.norm(as.matrix(ratios[sample(rownames(ratios),r1[2]), sample(colnames(ratios),r1[3])]), maxRowVar) })
+            r1[8] = mean(sub)
+            r1[9] = length(which(sub <= r1[7]))/permutations
             testEm.rows = list()
             testEm.rows[[1]] = k.rows
             for( i in 2:(permutations+1)) {
-                testEm.rows[[i]] = sample(rownames(ratios),r1[1])
+                testEm.rows[[i]] = sample(rownames(ratios),r1[2])
             }
             eg1 = getEigengene(t(ratios),testEm.rows)
             var.exp = t(eg1$varExplained)[,1]
-            r1[9] = var.exp[1]
-            r1[10] = mean(var.exp[2:length(var.exp)],na.rm=TRUE)
-            r1[11] = length(which(na.omit(var.exp[2:length(var.exp)]) >= r1[9]))/length(na.omit(var.exp[2:length(var.exp)]))
-            eg1.exh = getEigengene(t(ratios[,exhSubset]),testEm.rows)
-            var.exp.exh = t(eg1.exh$varExplained)[,1]
-            r1[12] = var.exp.exh[1]
-            r1[13] = mean(var.exp.exh[2:length(var.exp.exh)],na.rm=TRUE)
-            r1[14] = length(which(na.omit(var.exp.exh[2:length(var.exp.exh)]) >= r1[12]))/length(na.omit(var.exp.exh[2:length(var.exp.exh)]))
-            eg1.loc = getEigengene(t(ratios[,locSubset]),testEm.rows)
-            var.exp.loc = t(eg1.loc$varExplained)[,1]
-            r1[15] = var.exp.loc[1]
-            r1[16] = mean(var.exp.loc[2:length(var.exp.loc)],na.rm=TRUE)
-            r1[17] = length(which(na.omit(var.exp.loc[2:length(var.exp.loc)]) >= r1[15]))/length(na.omit(var.exp.loc[2:length(var.exp.loc)]))
-eg1.exh = getEigengene(t(ratios[,exhSubset_noCD44]),testEm.rows)
-            var.exp.exh = t(eg1.exh$varExplained)[,1]
-            r1[18] = var.exp.exh[1]
-            r1[19] = mean(var.exp.exh[2:length(var.exp.exh)],na.rm=TRUE)
-            r1[20] = length(which(na.omit(var.exp.exh[2:length(var.exp.exh)]) >= r1[18]))/length(na.omit(var.exp.exh[2:length(var.exp.exh)]))
-            eg1.loc = getEigengene(t(ratios[,locSubset_noCD44]),testEm.rows)
-            var.exp.loc = t(eg1.loc$varExplained)[,1]
-            r1[21] = var.exp.loc[1]
-            r1[22] = mean(var.exp.loc[2:length(var.exp.loc)],na.rm=TRUE)
-            r1[23] = length(which(na.omit(var.exp.loc[2:length(var.exp.loc)]) >= r1[21]))/length(na.omit(var.exp.loc[2:length(var.exp.loc)]))
+            r1[10] = var.exp[1]
+            r1[11] = mean(var.exp[2:length(var.exp)],na.rm=TRUE)
+            r1[12] = length(which(na.omit(var.exp[2:length(var.exp)]) >= r1[10]))/length(na.omit(var.exp[2:length(var.exp)]))
         }
         print(c(k,as.numeric(r1)))
     }))
+outNames = c('bicluster','bicluster','n.rows','n.cols','orig.resid','avg.perm.resid','perm.p','orig.resid.norm','avg.norm.perm.resid','norm.perm.p','pc1.var.exp','avg.pc1.var.exp','pc1.perm.p')
 colnames(m1) = outNames
-write.csv(m1,file='output/residualPermutedPvalues_permAll_vSubsets.csv')
+write.csv(m1,file='output/residualPermutedPvalues_permAll.csv')
 
