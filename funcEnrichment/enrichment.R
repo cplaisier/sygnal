@@ -1,31 +1,21 @@
 library(topGO)
 # Read in GO mappings to affymetrix probe ids
-library('org.Mm.eg.db')
-
-# Make a map of Entrez IDs to UCSC transcript IDs
-d1 = read.csv('entrez2ucsc.csv',header=F)
-ucsc2entrez = list()
-for(j in 1:length(d1[,1])) {
-    tmp = strsplit(as.character(d1[j,2]),split=';')[[1]]
-    for(k in tmp) {
-        ucsc2entrez[[as.character(k)]] = as.character(d1[j,1])
-    }
-}
+library('org.Hs.eg.db')
 
 # Automated for all clusters
 d1 = read.csv('../output/cluster.members.genes.txt',header=F)
 biclustMembership = list()
 for(j in 1:length(d1[,1])) {
-    biclustMembership[[j]] = as.character(unlist(ucsc2entrez[strsplit(as.character(d1[j,]),split=' ')[[1]][-1]]))
+    biclustMembership[[j]] = strsplit(as.character(d1[j,]),split=' ')[[1]][-1]
 }
-xx <- annFUN.org("BP", mapping = "org.Mm.eg.db", ID = "entrez")
+xx <- annFUN.org("BP", mapping = "org.Hs.eg.db", ID = "symbol")
 geneNames <- intersect(unique(unlist(biclustMembership)), unique(unlist(xx)))
 tmp1 <- biclustMembership[[1]]
 geneList <- factor(as.integer(geneNames %in% tmp1))
 names(geneList) <- geneNames
 
 # Make Biological Process GOData object
-GOdata.BP <- new("topGOdata", ontology='BP', allGenes = geneList, annot = annFUN.org, mapping = 'org.Mm.eg.db', ID = 'entrez')
+GOdata.BP <- new("topGOdata", ontology='BP', allGenes = geneList, annot = annFUN.org, mapping = 'org.Hs.eg.db', ID = 'symbol')
 m1.BP <- matrix(nrow = length(GOdata.BP@graph@nodes), ncol = length(biclustMembership), dimnames = list(GOdata.BP@graph@nodes, 1:length(biclustMembership)))
 m2.BP <- matrix(nrow = length(biclustMembership), ncol=2, dimnames = list(1:length(biclustMembership),c('Top10.Terms.BP','BH.sig.GO.Ids.BP')))
 # Make Molecular Function GOData object
