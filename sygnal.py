@@ -20,6 +20,7 @@
 
 from math import log10
 import cPickle, os, re, sys
+from sys import stdout
 from multiprocessing import Pool, cpu_count, Manager
 from subprocess import *
 import subprocess
@@ -52,11 +53,13 @@ nMotifs = 2
 regions = [ 'upstream' ]
 motifWidth = { 'upstream': [6, 12] }
 revComp = { 'upstream': True }
-# Filtering parameters
-maxScore = 0
-maxResidual = 0.5
+# Parameters for filtering results
 maxEValue = 10
-maxSurv = 0.05/610
+leo.nb.AtoB = 0.5 # Equates to ~3 times better model fit than next best model
+mlogp.M.AtoB = 0.05
+rhoCut = 0.3
+pVCut = 0.05
+percTargets = 0.1
 postProcessedFile = 'postProcessed_gbmTCGA_pita.csv'
 fpcFile = 'biclusterFirstPrincComponents.csv'
 subsets = ['all'] # Might be nice to include subtypes
@@ -64,7 +67,7 @@ subsetsPos = { 'all': [0,422] } # Might be nice to include subtypes
 randPssmsDir = 'randPSSMs'
 
 SYNONYM_PATH = '../synonymThesaurus.csv.gz'
-MIRNA_FASTA_PATH = 'miRNA/mmu.mature.fa'  # Need to update this to the latest database
+MIRNA_FASTA_PATH = 'miRNA/hsa.mature.fa'  # Need to update this to the latest database
 RATIOS_PATH = '../gbmTCGA_exprMat_medianFiltered.tsv'
 ALL_RATIOS_PATH = '../gbmTCGA_exprMat.tsv'
 
@@ -301,6 +304,31 @@ def survival(survival, dead, pc1, age):
     z2 = float((splitUp[2].split(' '))[1])
     pValue2 = float((splitUp[3].split(' '))[1])
     return [[z1, pValue1], [z2, pValue2]]
+
+# Compare miRNA names
+def compareMiRNANames(a, b):
+    """
+    Match miRNA names.
+    Input: Two miRNA names to be compared.
+    Returns:
+    """
+    if a==b:
+        return 1
+    if len(a)<len(b):
+        if a[-3:]=='-3p':
+            re1 = re.compile(a+'[a-oq-z]?(-\d)?-3p$')
+        else:
+            re1 = re.compile(a+'[a-oq-z]?(-\d)?(-5p)?$')
+        if re1.match(b):
+            return 1
+    else:
+        if b[-3:]=='-3p':
+            re1 = re.compile(b+'[a-oq-z]?(-\d)?-3p$')
+        else:
+            re1 = re.compile(b+'[a-oq-z]?(-\d)?(-5p)?$')
+        if re1.match(a):
+            return 1
+    return 0
 
 
 def sygnal_init():
@@ -1367,6 +1395,24 @@ if not os.path.exists('output/c1_postProc.pkl'):
     print 'Done.\n'
 
     #################################################################
+    ## Dump first principal components for each bicluster          ##
+    #################################################################
+    print 'Write biclusterFirstPrincComponents.csv...'
+    # Get all first principal components for each bicluster
+    fpcWrite = []
+    conditions = c1.getBicluster(1).getAttribute('pc1').keys()
+    for i in sorted(c1.getBiclusters().keys()):
+        pc1 = c1.getBicluster(i).getAttribute('pc1')
+        fpcWrite.append(str(i)+','+','.join([str(pc1[j]) for j in conditions]))
+
+    # Dump out file
+    with open('output/'+str(fpcFile),'w') as outfile:
+        outfile.write('Bicluster,'+','.join([j.strip() for j in conditions])+'\n')
+        outfile.write('\n'.join(fpcWrite))
+
+    print 'Done.\n'
+
+    #################################################################
     ## Get permuted p-values for upstream meme motifs              ##
     #################################################################
     # Make needed directories
@@ -1678,13 +1724,96 @@ else:
         c1 = cPickle.load(pklFile)
     print 'Done.\n'
 
+
+#################################################################
+## Run NEO and integrate some form of results                  ##
+## TODO: Make NEO run on subsets                               ##
+#################################################################
+if not os.path.exists('output/causality'):
+    ## Run the runNEO.R script and do the causality analyses
+    print '  Network edge orienting (NEO)...'
+    neoProc = Popen('cd NEO; R --no-save < runNEO.R', shell=True, stdout=PIPE, stderr=PIPE)
+    output = neoProc.communicate()[0].split('\n')
+
+    ## Pull together analysis into cohesive output
+    causalSummary = []
+    # For each mutation
+    for dir in listdir('output/causality'):
+        # For each regulator
+        if dir[0:6]=='causal_':
+            # For each 
+            for file in listdir('output/causality/'+dir):
+                if file[0:3]=='sm.':
+                    print '  '+file
+                    with open('output/causality/'+dir+'/'+file,'r') as inFile:
+                        inLine = inFile.readline() # Get rid of header
+                        while 1:
+                            inLine = inFile.readline()
+                            if not inLine:
+                                break
+                            spltiUp = inLine.strip().split(',')
+                            if float(splitUp[6]) >= leo.nb.AtoB and float(splitUp[12]) <= mlogp.M.AtoB:
+                                # Somatic Mutation(1), Regulator(3), Biclster(5), leo.nb.AtoB(6), mlogp.M.AtoB(12), PathAB(17), SEPathAB(18), ZPathAB(19), PPathAB(20), BLV.AtoB(25), RMSEA.AtoB(28)
+                                causalSummary.append({'Mutation': splitUp[1].lstrip('M:'), 'Regulator': splitUp[3].lstrip('A:'), 'Bicluster': splitUp[5].lstrip('B:'), 'leo.nb.AtoB': splitUp[1], 'mlogp.M.AtoB': splitUp[12], 'PathAB': splitUp[17], 'SEPathAB': splitUp[18], 'ZPathAB': splitUp[19], 'PPathAB': splitUp[20], 'BLV.AtoB': splitUp[25], 'RMSEA.AtoB': splitUp[28]})
+
+    ## Output:  Somatic Mutation(1), Regulator(3), Biclster(5), leo.nb.AtoB(6), mlogp.M.AtoB(12), PathAB(17), SEPathAB(18), ZPathAB(19), PPathAB(20), BLV.AtoB(25), RMSEA.AtoB(28)
+    header = ['Mutation', 'Regulator', 'Bicluster', 'leo.nb.AtoB', 'mlogp.M.AtoB', 'PathAB', 'SEPathAB', 'ZPathAB', 'PPathAB', 'BLV.AtoB', 'RMSEA.AtoB']
+    with open('output/causalitySummary.csv','w') as outFile:
+        outFile.write(','.join(header)+'\n')
+        outFile.write('\n'.join([','.join([i[j] for j in header]) for i in causalSummary]))
+
+    ## Dump out correspondent regulators (both mechanistically and causally predicted)
+    correspondentRegulators = {}
+    for causalFlow in causalSummary:
+        b1 = c1.getBicluster(int(causalFlow['Bicluster']))
+        ## Upstream (TFs)
+        tfs = []
+        # 1. MEME and WEEDER Upstream motifs
+        for pssm in b1.getPssmsUpstream():
+            for corTf in pssm.getCorrelatedMatches():
+                if corTf['pValue']<=pVCut and abs(corTf['rho'])>=rhoCut:
+                    tfs.append(corTf['factor'])
+        # 2. TFBS_DB
+        for corTf in b1.getAttributes()['tfbs_db_correlated']:
+            if corTf['pValue']<=pVCut and abs(corTf['rho'])>=rhoCut:
+                tfs.append(corTf['factor'])
+        # 3. Find Correspondent TF regulators
+        if causalFlow['Regulator'] in tfs:
+            if not int(causalFlow['Bicluster']) in correspondentRegulators:
+                correspondentRegulators[int(causalFlow['Bicluster'])] = {'tf':[],'miRNA':[]}
+            correspondentRegulators[int(causalFlow['Bicluster'])]['tf'].append(causalFlow['Regulator']
+
+        ## 3' UTR (miRNA)
+        miRNAs = []
+        # 1. WEEDER 3'UTR
+        for pssm in b1.getPssms3pUTR():
+            for miR in pssm.getMatches():
+                if miR['confidence'] in ['8mer','7mer_a1','7mer_m8']:
+                    miRNAs += miRNAIDs_rev[miR['factor'])
+        # 2. PITA (not correlated)
+        if float(b1.getAttributes()['pita_3pUTR']['percentTargets'].split(' ')[0])>=percTargets and float(b1.getAttributes()['pita_3pUTR']['pValue'].split(' ')[0])<=pVCut:
+            miRNAs += b1.getAttributes()['pita_3pUTR']['miRNA'].split(' ')
+        # 3. TargetScan (not correlated)
+        if float(b1.getAttributes()['targetscan_3pUTR']['percentTargets'].split(' ')[0])>=percTargets and float(b1.getAttributes()['targetscan_3pUTR']['pValue'].split(' ')[0])<=pVCut:
+            miRNAs += b1.getAttributes()['targetscan_3pUTR']['miRNA'].split(' ')
+        # 4. Find Correspondent miRNA regulators
+        for miR in miRNAs:
+            if  compareMiRNANames(causalFlow['Regulator'].lower(), miR.lower()):
+                if not int(causalFlow['Bicluster']) in correspondentRegulators:
+                    correspondentRegulators[int(causalFlow['Bicluster'])] = {'tf':[],'miRNA':[]}
+                correspondentRegulators[int(causalFlow['Bicluster'])]['miRNA'].append(causalFlow['Regulator']
+    
+    ## Put correspondent regulators into cMonkeyWrapper object
+    for biclust in correspondenceRegulators.keys():
+        b1 = c1.getBicluster(biclust)
+        b1.addAttribute(key='correspondentRegulators',value=correspondentRegulators[biclust])
+
+
 #################################################################
 ## Write out the final post-processed file                     ##
 #################################################################
 print 'Write postProcessedVFinal.csv...'
 postOut = []
-rhoCut = 0.3
-pVCut = 0.05
 hallmarksOfCancer = c1.getBicluster(1).getAttribute('hallmarksOfCancer').keys()
 for i in sorted(c1.getBiclusters().keys()):
     writeMe = []
@@ -1912,7 +2041,14 @@ for i in sorted(c1.getBiclusters().keys()):
         else:
             writeMe += ['NA','NA','NA']
 
-    #   f. Associations with traits:  age, sex.bi, chemo_therapy, radiation_therapy
+    #   f. Correpsondent regulators
+    corrspondentRegulators = b1.getAttribute('correspondentRegulators')
+    if not correspondentRegulators==None:
+        writeMe += [' '.join(correspondentRegulators['tf']), ' '.join(correspondentRegulators['miRNA'])]
+    else:
+        writeMe += ['NA','NA']
+
+    #   g. Associations with traits:  age, sex.bi, chemo_therapy, radiation_therapy
     for association in ['AGE','SEX.bi', 'chemo_therapy','radiation_therapy']:
         ass1 = b1.getAttribute(association)
         writeMe += [str(ass1['rho']), str(ass1['pValue'])]
@@ -1920,7 +2056,7 @@ for i in sorted(c1.getBiclusters().keys()):
     survAge1 = b1.getAttribute('Survival.AGE')
     writeMe += [str(surv1['z']), str(surv1['pValue']), str(survAge1['z']), str(survAge1['pValue'])]
 
-    #   g. Replications:  'REMBRANDT_new.resid.norm','REMBRANDT_avg.resid.norm','REMBRANDT_norm.perm.p','REMBRANDT_survival','REMBRANDT_survival.p','REMBRANDT_survival.age','REMBRANDT_survival.age.p','GSE7696_new.resid.norm','GSE7696_avg.resid.norm','GSE7696_norm.perm.p','GSE7696_survival','GSE7696_survival.p','GSE7696_survival.age','GSE7696_survival.age.p'
+    #   h. Replications:  'REMBRANDT_new.resid.norm','REMBRANDT_avg.resid.norm','REMBRANDT_norm.perm.p','REMBRANDT_survival','REMBRANDT_survival.p','REMBRANDT_survival.age','REMBRANDT_survival.age.p','GSE7696_new.resid.norm','GSE7696_avg.resid.norm','GSE7696_norm.perm.p','GSE7696_survival','GSE7696_survival.p','GSE7696_survival.age','GSE7696_survival.age.p'
     replications_French = b1.getAttribute('replication_French')
     replications_REMBRANDT = b1.getAttribute('replication_REMBRANDT')
     replications_French_all = b1.getAttribute('replication_French_all')
@@ -1937,19 +2073,19 @@ for i in sorted(c1.getBiclusters().keys()):
     for replication in ['GSE7696_pc1.var.exp','GSE7696_avg.pc1.var.exp','GSE7696_pc1.perm.p','GSE7696_survival','GSE7696_survival.p','GSE7696_survival.age','GSE7696_survival.age.p']:
         writeMe.append(str(replications_GSE7696[replication]))
 
-    #   h. Functional enrichment of biclusters using GO term Biological Processes
+    #   i. Functional enrichment of biclusters using GO term Biological Processes
     bfe1 = b1.getAttribute('goTermBP')
     if bfe1==['']:
         writeMe.append('NA')
     else:
         writeMe.append(';'.join(bfe1))
     
-    #   i. Hallmarks of Cancer:  Hanahan and Weinberg, 2011
+    #   j. Hallmarks of Cancer:  Hanahan and Weinberg, 2011
     bhc1 = b1.getAttribute('hallmarksOfCancer')
     for hallmark in hallmarksOfCancer:
         writeMe.append(str(bhc1[hallmark]))
 
-    #   j. Glioma sub-type enrichment: 'NON_TUMOR','ASTROCYTOMA','MIXED','OLIGODENDROGLIOMA','GBM'
+    #   k. Glioma sub-type enrichment: 'NON_TUMOR','ASTROCYTOMA','MIXED','OLIGODENDROGLIOMA','GBM'
     #for overlap in ['NON_TUMOR','ASTROCYTOMA','MIXED','OLIGODENDROGLIOMA','GBM']:
     #    writeMe.append(str(b1.getAttribute(overlap)))
     
@@ -1967,6 +2103,7 @@ with open('output/'+str(postProcessedFile),'w') as postFinal:
      ['3pUTR.WEEDER Motif2 E-Value', '3pUTR.WEEDER Motif2 Perm. P-Value', '3pUTR.WEEDER Motif2 Perm. P-Value (All)', '3pUTR.WEEDER Motif2 Consensus', '3pUTR.WEEDER Motif2 Matches', '3pUTR.WEEDER Motif2 Model'] + # 3' UTR WEEDER motif 1 
      ['3pUTR_pita.miRNAs', '3pUTR_pita.percTargets', '3pUTR_pita.pValue'] + # 3' UTR PITA enrichment
      ['3pUTR_targetScan.miRNAs', '3pUTR_targetScan.percTargets', '3pUTR_targetScan.pValue'] + # 3' UTR PITA enrichment
+    ['Correspondent.TFs', 'Correspondent.miRNAs'] + # Correspondent TFs and miRNAs (both mechanistic and causal support)
      ['Age', 'Age.p', 'Sex', 'Sex.p', 'Chemotherapy', 'Chemotherapy.p', 'RadiationTherapy', 'RadiationTherapy.p', 'Survival', 'Survival.p', 'Survial.covAge', 'Survival.covAge.p'] + # Correlation of traits and patient survival analyses
      ['French_pc1.var.exp','French_avg.pc1.var.exp','French_pc1.perm.p','French_survival','French_survival.p','French_survival.age','French_survival.age.p', 'French_all_pc1.var.exp','French_all_avg.pc1.var.exp','French_all_pc1.perm.p','French_all_survival','French_all_survival.p','French_all_survival.age','French_all_survival.age.p'] + # Replication in Gravendeel, et al. 2009 dataset
      ['REMBRANDT_pc1.var.exp','REMBRANDT_avg.pc1.var.exp','REMBRANDT_pc1.perm.p','REMBRANDT_survival','REMBRANDT_survival.p','REMBRANDT_survival.age','REMBRANDT_survival.age.p', 'REMBRANDT_all_pc1.var.exp','REMBRANDT_all_avg.pc1.var.exp','REMBRANDT_all_pc1.perm.p','REMBRANDT_all_survival','REMBRANDT_all_survival.p','REMBRANDT_all_survival.age','REMBRANDT_all_survival.age.p'] + # Replication in Madhavan, et al. 2009 dataset
@@ -1977,21 +2114,3 @@ with open('output/'+str(postProcessedFile),'w') as postFinal:
 
 print 'Done.\n'
 
-
-#################################################################
-## Dump first principal components for each bicluster          ##
-#################################################################
-print 'Write biclusterFirstPrincComponents.csv...'
-# Get all first principal components for each bicluster
-fpcWrite = []
-conditions = c1.getBicluster(1).getAttribute('pc1').keys()
-for i in sorted(c1.getBiclusters().keys()):
-    pc1 = c1.getBicluster(i).getAttribute('pc1')
-    fpcWrite.append(str(i)+','+','.join([str(pc1[j]) for j in conditions]))
-
-# Dump out file
-with open('output/'+str(fpcFile),'w') as outfile:
-    outfile.write('Bicluster,'+','.join([j.strip() for j in conditions])+'\n')
-    outfile.write('\n'.join(fpcWrite))
-
-print 'Done.\n'
