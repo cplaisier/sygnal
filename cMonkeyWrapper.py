@@ -92,7 +92,7 @@ class cMonkeyWrapper:
                 stdout.write('.')
             stdout.flush()
         # Now read in the upstream sequences
-        upstreamSeqsFile = gzip.open('seqs/promoterSeqs_Mus_musculus.csv.gz','rb')
+        upstreamSeqsFile = gzip.open('seqs/promoterSeqs_Homo_sapiens_gs_fp.csv.gz','rb')
         upstreamSeqsFile.readline() # Skip header
         self.seqsUpstream = {}
         for line in upstreamSeqsFile.readlines():
@@ -106,7 +106,7 @@ class cMonkeyWrapper:
                         self.seqsUpstream[gene] = splitUp[1].strip('"')
         upstreamSeqsFile.close()
         # Now read in the 3' UTR sequences
-        p3utrSeqsFile = gzip.open('seqs/p3utrSeqs_Mus_musculus.csv.gz','rb')
+        p3utrSeqsFile = gzip.open('seqs/p3utrSeqs_Homo_sapiens_gs.csv.gz','rb')
         p3utrSeqsFile.readline() # Skip header
         self.seqs3pUTR = {}
         for line in p3utrSeqsFile.readlines():
