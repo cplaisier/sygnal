@@ -55,8 +55,8 @@ motifWidth = { 'upstream': [6, 12] }
 revComp = { 'upstream': True }
 # Parameters for filtering results
 maxEValue = 10
-leo.nb.AtoB = 0.5 # Equates to ~3 times better model fit than next best model
-mlogp.M.AtoB = 0.05
+leo_nb_AtoB = 0.5 # Equates to ~3 times better model fit than next best model
+mlogp_M_AtoB = 0.05
 rhoCut = 0.3
 pVCut = 0.05
 percTargets = 0.1
@@ -69,7 +69,7 @@ randPssmsDir = 'randPSSMs'
 SYNONYM_PATH = '../synonymThesaurus.csv.gz'
 MIRNA_FASTA_PATH = 'miRNA/hsa.mature.fa'  # Need to update this to the latest database
 RATIOS_PATH = '../gbmTCGA_exprMat_medianFiltered.tsv'
-ALL_RATIOS_PATH = '../gbmTCGA_exprMat.tsv'
+ALL_RATIOS_PATH = 'expression/gbmTCGA_exprMat.tsv'
 
 
 #################################################################
@@ -891,7 +891,7 @@ if not os.path.exists('output/c1_all.pkl'):
                 print 'Loading TargetScan predictions...'
                 tmpList = []
                 tmpDict = {}
-                with gzip.open('miRNA/targetscan_miRNA_sets_entrez.csv.gz','r') as infile:
+                with gzip.open('miRNA/targetscan_miRNA_sets_geneSymbol.csv.gz','r') as infile:
                     inLines = [i.strip().split(',') for i in infile.readlines() if i.strip()]
 
                 for line in inLines:
@@ -1121,7 +1121,6 @@ if not os.path.exists('output/c1_postProc.pkl'):
         print 'Do post processing...'
         cpus = cpu_count()
         biclustIds = c1.getBiclusters()
-        #print postProcess(1)
         pool = Pool(processes=cpus)
         res1 = pool.map(postProcess, biclustIds)
         pool.close()
@@ -1249,7 +1248,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
     print 'Expanding TF factor list with TFClass families...'
     # Read in humanTFs_All.csv with <TF Name>,<Entrez ID>
     tfName2entrezId = {}
-    with open('TF/mouseTFs_All.csv','r') as inFile:
+    with open('TF/humanTFs_All.csv','r') as inFile:
         inFile.readline() # Get rid of header
         for line in inFile:
             splitUp = line.strip().split(',')
@@ -1259,7 +1258,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
 
     # Read in tfFamilies.csv for expanded list of possible TFs
     tfFamilies = {}
-    with open('TF/tfFamilies_musculus.csv','r') as infile:
+    with open('TF/tfFamilies.csv','r') as inFile:
         inFile.readline() # Get rid of header
         for line in inFile:
             splitUp = line.strip().split(',')
@@ -1752,7 +1751,7 @@ if not os.path.exists('output/causality'):
                             if not inLine:
                                 break
                             spltiUp = inLine.strip().split(',')
-                            if float(splitUp[6]) >= leo.nb.AtoB and float(splitUp[12]) <= mlogp.M.AtoB:
+                            if float(splitUp[6]) >= leo_nb_AtoB and float(splitUp[12]) <= mlogp_M_AtoB:
                                 # Somatic Mutation(1), Regulator(3), Biclster(5), leo.nb.AtoB(6), mlogp.M.AtoB(12), PathAB(17), SEPathAB(18), ZPathAB(19), PPathAB(20), BLV.AtoB(25), RMSEA.AtoB(28)
                                 causalSummary.append({'Mutation': splitUp[1].lstrip('M:'), 'Regulator': splitUp[3].lstrip('A:'), 'Bicluster': splitUp[5].lstrip('B:'), 'leo.nb.AtoB': splitUp[1], 'mlogp.M.AtoB': splitUp[12], 'PathAB': splitUp[17], 'SEPathAB': splitUp[18], 'ZPathAB': splitUp[19], 'PPathAB': splitUp[20], 'BLV.AtoB': splitUp[25], 'RMSEA.AtoB': splitUp[28]})
 
@@ -1781,7 +1780,7 @@ if not os.path.exists('output/causality'):
         if causalFlow['Regulator'] in tfs:
             if not int(causalFlow['Bicluster']) in correspondentRegulators:
                 correspondentRegulators[int(causalFlow['Bicluster'])] = {'tf':[],'miRNA':[]}
-            correspondentRegulators[int(causalFlow['Bicluster'])]['tf'].append(causalFlow['Regulator']
+            correspondentRegulators[int(causalFlow['Bicluster'])]['tf'].append(causalFlow['Regulator'])
 
         ## 3' UTR (miRNA)
         miRNAs = []
@@ -1789,7 +1788,7 @@ if not os.path.exists('output/causality'):
         for pssm in b1.getPssms3pUTR():
             for miR in pssm.getMatches():
                 if miR['confidence'] in ['8mer','7mer_a1','7mer_m8']:
-                    miRNAs += miRNAIDs_rev[miR['factor'])
+                    miRNAs += miRNAIDs_rev[miR['factor']]
         # 2. PITA (not correlated)
         if float(b1.getAttributes()['pita_3pUTR']['percentTargets'].split(' ')[0])>=percTargets and float(b1.getAttributes()['pita_3pUTR']['pValue'].split(' ')[0])<=pVCut:
             miRNAs += b1.getAttributes()['pita_3pUTR']['miRNA'].split(' ')
@@ -1801,7 +1800,7 @@ if not os.path.exists('output/causality'):
             if  compareMiRNANames(causalFlow['Regulator'].lower(), miR.lower()):
                 if not int(causalFlow['Bicluster']) in correspondentRegulators:
                     correspondentRegulators[int(causalFlow['Bicluster'])] = {'tf':[],'miRNA':[]}
-                correspondentRegulators[int(causalFlow['Bicluster'])]['miRNA'].append(causalFlow['Regulator']
+                correspondentRegulators[int(causalFlow['Bicluster'])]['miRNA'].append(causalFlow['Regulator'])
     
     ## Put correspondent regulators into cMonkeyWrapper object
     for biclust in correspondenceRegulators.keys():
@@ -1826,7 +1825,7 @@ for i in sorted(c1.getBiclusters().keys()):
                 str(b1.getNormResidual()), # normalized residual
                 str(b1.getAttribute('resid.norm.perm.p')), # normalized residual permuted p-value
                 str(b1.getAttribute('pc1.var.exp')), # Variance explained by first principal component
-                str(b1.getAttribute('pc1.perm.p')), # Variance explained by first principal component
+                str(b1.getAttribute('pc1.perm.p'))] # Variance explained by first principal component
     #   b. Upstream motifs:  meme.motif1.E, meme.motif1.consensus, meme.motif1.matches, meme.motif1.permPV
     motifNames = b1.getPssmsNamesUpstream()
     upstreamMotifs = { 'meme_motif1':None, 'meme_motif2':None, 'weeder_motif1':None, 'weeder_motif2':None }
@@ -1992,9 +1991,7 @@ for i in sorted(c1.getBiclusters().keys()):
             writeMe += [str(a1['tf']).replace(';',' '),
                         str(a1['percentTargets']).replace(';',' '),
                         str(a1['pValue']),
-                        expandedMatches] +
-                       [correlatedMatches[subset] + ',' + originalExpanded[subset]
-                        + ',' + minCorrelated[subset] for subset in subsets]
+                        expandedMatches] + [correlatedMatches[subset] + ',' + originalExpanded[subset] + ',' + minCorrelated[subset] for subset in subsets]
         else:
             writeMe += (['NA','NA','NA','NA'] + ['NA,NA,NA' for subset in subsets])
 
@@ -2093,23 +2090,23 @@ for i in sorted(c1.getBiclusters().keys()):
     postOut.append(deepcopy(writeMe))
 
 with open('output/'+str(postProcessedFile),'w') as postFinal:
-    header = ['Bicluster', 'Genes', 'Patients', 'Norm. Residual', 'Norm. Residual Perm. P-Value', 'Var. Exp. First PC', 'Var. Exp. First PC Perm. P-Value'] + # Basic bicluster statistics
-     ['MEME Motif1 E-Value', 'MEME Motif1 Perm. P-Value', 'Up.MEME Motif1 Consensus', 'Up.MEME Motif1 Matches','Up.MEME Motif1 Expanded Matches', 'Up.MEME Motif1 Correlated Matches', 'Up.MEME Motif1 Original/Expanded', 'Up.MEME Motif1 Minimum Correlated'] + # Upstream MEME motif 1
-     ['Up.MEME Motif2 E-Value', 'Up.MEME Motif2 Perm. P-Value', 'Up.MEME Motif2 Consensus', 'Up.MEME Motif2 Matches', 'Up.MEME Motif2 Expanded Matches', 'Up.MEME Motif2 Correlated Matches', 'Up.MEME Motif2 Original/Expanded', 'Up.MEME Motif2 Minimum Correlated'] + # Upstream MEME motif 2
-     ['Up.WEEDER Motif1 Score', 'Up.WEEDER Motif1 Consensus', 'Up.WEEDER Motif1 Matches', 'Up.WEEDER Motif1 Expanded Matches', 'Up.WEEDER Motif1 Correlated Matches', 'Up.WEEDER Motif1 Original/Expanded', 'Up.WEEDER Motif1 Minimum Correlated'] + # Upstream WEEDER motif 1
-     ['Up.WEEDER Motif2 Score', 'Up.WEEDER Motif2 Consensus', 'Up.WEEDER Motif2 Matches', 'Up.WEEDER Motif2 Expanded Matches', 'Up.WEEDER Motif2 Correlated Matches', 'Up.WEEDER Motif2 Original/Expanded', 'Up.WEEDER Motif2 Minimum Correlated'] + # Upstream WEEDER motif 1
-     ['TFBS_DB.TFs', 'TFBS_DB.percTargets', 'TFBS_DB.pValue', 'TFBS_DB.Exapnded Matches', 'TFBS_DB.Correlated Matches', 'TFBS_DB.Original/Expanded','TFBS_DB.Minimum Correlated'] + # TF-target gene database enrichment
-     ['3pUTR.WEEDER Motif1 E-Value', '3pUTR.WEEDER Motif1 Perm. P-Value', '3pUTR.WEEDER Motif1 Perm. P-Value (All)', '3pUTR.WEEDER Motif1 Consensus', '3pUTR.WEEDER Motif1 Matches', '3pUTR.WEEDER Motif1 Model'] + # 3' UTR WEEDER motif 1
-     ['3pUTR.WEEDER Motif2 E-Value', '3pUTR.WEEDER Motif2 Perm. P-Value', '3pUTR.WEEDER Motif2 Perm. P-Value (All)', '3pUTR.WEEDER Motif2 Consensus', '3pUTR.WEEDER Motif2 Matches', '3pUTR.WEEDER Motif2 Model'] + # 3' UTR WEEDER motif 1 
-     ['3pUTR_pita.miRNAs', '3pUTR_pita.percTargets', '3pUTR_pita.pValue'] + # 3' UTR PITA enrichment
-     ['3pUTR_targetScan.miRNAs', '3pUTR_targetScan.percTargets', '3pUTR_targetScan.pValue'] + # 3' UTR PITA enrichment
-    ['Correspondent.TFs', 'Correspondent.miRNAs'] + # Correspondent TFs and miRNAs (both mechanistic and causal support)
-     ['Age', 'Age.p', 'Sex', 'Sex.p', 'Chemotherapy', 'Chemotherapy.p', 'RadiationTherapy', 'RadiationTherapy.p', 'Survival', 'Survival.p', 'Survial.covAge', 'Survival.covAge.p'] + # Correlation of traits and patient survival analyses
-     ['French_pc1.var.exp','French_avg.pc1.var.exp','French_pc1.perm.p','French_survival','French_survival.p','French_survival.age','French_survival.age.p', 'French_all_pc1.var.exp','French_all_avg.pc1.var.exp','French_all_pc1.perm.p','French_all_survival','French_all_survival.p','French_all_survival.age','French_all_survival.age.p'] + # Replication in Gravendeel, et al. 2009 dataset
-     ['REMBRANDT_pc1.var.exp','REMBRANDT_avg.pc1.var.exp','REMBRANDT_pc1.perm.p','REMBRANDT_survival','REMBRANDT_survival.p','REMBRANDT_survival.age','REMBRANDT_survival.age.p', 'REMBRANDT_all_pc1.var.exp','REMBRANDT_all_avg.pc1.var.exp','REMBRANDT_all_pc1.perm.p','REMBRANDT_all_survival','REMBRANDT_all_survival.p','REMBRANDT_all_survival.age','REMBRANDT_all_survival.age.p'] + # Replication in Madhavan, et al. 2009 dataset
-     ['GSE7696_pc1.var.exp','GSE7696_avg.pc1.var.exp','GSE7696_pc1.perm.p','GSE7696_survival','GSE7696_survival.p','GSE7696_survival.age','GSE7696_survival.age.p'] + # Replication in Murat, et al. 2008 dataset
-     ['GO_Term_BP'] + # Enriched GO biological processes
-     [i.strip() for i in hallmarksOfCancer] # Hallmarks of cancer
+    header = ['Bicluster', 'Genes', 'Patients', 'Norm. Residual', 'Norm. Residual Perm. P-Value', 'Var. Exp. First PC', 'Var. Exp. First PC Perm. P-Value'] + \
+     ['MEME Motif1 E-Value', 'MEME Motif1 Perm. P-Value', 'Up.MEME Motif1 Consensus', 'Up.MEME Motif1 Matches','Up.MEME Motif1 Expanded Matches', 'Up.MEME Motif1 Correlated Matches', 'Up.MEME Motif1 Original/Expanded', 'Up.MEME Motif1 Minimum Correlated'] + \
+     ['Up.MEME Motif2 E-Value', 'Up.MEME Motif2 Perm. P-Value', 'Up.MEME Motif2 Consensus', 'Up.MEME Motif2 Matches', 'Up.MEME Motif2 Expanded Matches', 'Up.MEME Motif2 Correlated Matches', 'Up.MEME Motif2 Original/Expanded', 'Up.MEME Motif2 Minimum Correlated'] + \
+     ['Up.WEEDER Motif1 Score', 'Up.WEEDER Motif1 Consensus', 'Up.WEEDER Motif1 Matches', 'Up.WEEDER Motif1 Expanded Matches', 'Up.WEEDER Motif1 Correlated Matches', 'Up.WEEDER Motif1 Original/Expanded', 'Up.WEEDER Motif1 Minimum Correlated'] + \
+     ['Up.WEEDER Motif2 Score', 'Up.WEEDER Motif2 Consensus', 'Up.WEEDER Motif2 Matches', 'Up.WEEDER Motif2 Expanded Matches', 'Up.WEEDER Motif2 Correlated Matches', 'Up.WEEDER Motif2 Original/Expanded', 'Up.WEEDER Motif2 Minimum Correlated'] + \
+     ['TFBS_DB.TFs', 'TFBS_DB.percTargets', 'TFBS_DB.pValue', 'TFBS_DB.Exapnded Matches', 'TFBS_DB.Correlated Matches', 'TFBS_DB.Original/Expanded','TFBS_DB.Minimum Correlated'] + \
+     ['3pUTR.WEEDER Motif1 E-Value', '3pUTR.WEEDER Motif1 Perm. P-Value', '3pUTR.WEEDER Motif1 Perm. P-Value (All)', '3pUTR.WEEDER Motif1 Consensus', '3pUTR.WEEDER Motif1 Matches', '3pUTR.WEEDER Motif1 Model'] + \
+     ['3pUTR.WEEDER Motif2 E-Value', '3pUTR.WEEDER Motif2 Perm. P-Value', '3pUTR.WEEDER Motif2 Perm. P-Value (All)', '3pUTR.WEEDER Motif2 Consensus', '3pUTR.WEEDER Motif2 Matches', '3pUTR.WEEDER Motif2 Model'] + \
+     ['3pUTR_pita.miRNAs', '3pUTR_pita.percTargets', '3pUTR_pita.pValue'] + \
+     ['3pUTR_targetScan.miRNAs', '3pUTR_targetScan.percTargets', '3pUTR_targetScan.pValue'] + \
+     ['Correspondent.TFs', 'Correspondent.miRNAs'] + \
+     ['Age', 'Age.p', 'Sex', 'Sex.p', 'Chemotherapy', 'Chemotherapy.p', 'RadiationTherapy', 'RadiationTherapy.p', 'Survival', 'Survival.p', 'Survial.covAge', 'Survival.covAge.p'] + \
+     ['French_pc1.var.exp','French_avg.pc1.var.exp','French_pc1.perm.p','French_survival','French_survival.p','French_survival.age','French_survival.age.p', 'French_all_pc1.var.exp','French_all_avg.pc1.var.exp','French_all_pc1.perm.p','French_all_survival','French_all_survival.p','French_all_survival.age','French_all_survival.age.p'] + \
+     ['REMBRANDT_pc1.var.exp','REMBRANDT_avg.pc1.var.exp','REMBRANDT_pc1.perm.p','REMBRANDT_survival','REMBRANDT_survival.p','REMBRANDT_survival.age','REMBRANDT_survival.age.p', 'REMBRANDT_all_pc1.var.exp','REMBRANDT_all_avg.pc1.var.exp','REMBRANDT_all_pc1.perm.p','REMBRANDT_all_survival','REMBRANDT_all_survival.p','REMBRANDT_all_survival.age','REMBRANDT_all_survival.age.p'] + \
+     ['GSE7696_pc1.var.exp','GSE7696_avg.pc1.var.exp','GSE7696_pc1.perm.p','GSE7696_survival','GSE7696_survival.p','GSE7696_survival.age','GSE7696_survival.age.p'] + \
+     ['GO_Term_BP'] + \
+     [i.strip() for i in hallmarksOfCancer]
     postFinal.write(','.join(header)+'\n'+'\n'.join([','.join(i) for i in postOut]))
 
 print 'Done.\n'

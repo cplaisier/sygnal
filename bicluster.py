@@ -77,7 +77,7 @@ class bicluster:
         data = cur.fetchall()
         self.conditions = [i['name'] for i in data]
         # Read in residuals
-        q1 = 'SELECT residual FROM cluster_residuals WHERE cluster='+str(self.k)+' and iteration='+str(self.maxIter)
+        q1 = 'SELECT residual FROM cluster_stats WHERE cluster='+str(self.k)+' and iteration='+str(self.maxIter)
         cur.execute(q1)
         data = cur.fetchall()
         self.residNorm = float(data[0]['residual'])

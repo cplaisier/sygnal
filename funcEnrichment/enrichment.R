@@ -2,8 +2,10 @@ library(topGO)
 # Read in GO mappings to affymetrix probe ids
 library('org.Hs.eg.db')
 
+loc1 = '/local/cMonkey/gbmTCGA/gbmTCGA.pita_2000/sygnal/output/'
+
 # Automated for all clusters
-d1 = read.csv('../output/cluster.members.genes.txt',header=F)
+d1 = read.csv(paste(loc1,'cluster.members.genes.txt',sep=''),header=F)
 biclustMembership = list()
 for(j in 1:length(d1[,1])) {
     biclustMembership[[j]] = strsplit(as.character(d1[j,]),split=' ')[[1]][-1]
@@ -29,5 +31,5 @@ for( biclust in (1:length(biclustMembership)) ) {
     m2.BP[biclust,2] = paste(names(which(p.adjust(r1.BP@score,method='BH')<=0.05)),collapse=';')
 }
 
-write.csv(m2.BP,'../output/biclusterEnrichment_GOBP.csv') 
+write.csv(m2.BP,paste(loc1,'biclusterEnrichment_GOBP.csv',sep='')) 
 
