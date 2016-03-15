@@ -1737,23 +1737,22 @@ if not os.path.exists('output/causality'):
 ## Pull together analysis into cohesive output
 causalSummary = []
 # For each mutation
-for dir in listdir('output/causality'):
+for dir1 in os.listdir('output/causality'):
     # For each regulator
-    if dir[0:6]=='causal_':
+    if dir1[0:7]=='causal_':
         # For each 
-        for file in listdir('output/causality/'+dir):
-            if file[0:3]=='sm.':
-                print '  '+file
-                with open('output/causality/'+dir+'/'+file,'r') as inFile:
+        for file1 in os.listdir('output/causality/'+dir1):
+            if file1[0:3]=='sm.':
+                with open('output/causality/'+dir1+'/'+file1,'r') as inFile:
                     inLine = inFile.readline() # Get rid of header
                     while 1:
                         inLine = inFile.readline()
                         if not inLine:
                             break
-                        spltiUp = inLine.strip().split(',')
+                        splitUp = inLine.strip().split(',')
                         if float(splitUp[6]) >= leo_nb_AtoB and float(splitUp[12]) <= mlogp_M_AtoB:
                             # Somatic Mutation(1), Regulator(3), Biclster(5), leo.nb.AtoB(6), mlogp.M.AtoB(12), PathAB(17), SEPathAB(18), ZPathAB(19), PPathAB(20), BLV.AtoB(25), RMSEA.AtoB(28)
-                            causalSummary.append({'Mutation': splitUp[1].lstrip('M:'), 'Regulator': splitUp[3].lstrip('A:'), 'Bicluster': splitUp[5].lstrip('B:'), 'leo.nb.AtoB': splitUp[1], 'mlogp.M.AtoB': splitUp[12], 'PathAB': splitUp[17], 'SEPathAB': splitUp[18], 'ZPathAB': splitUp[19], 'PPathAB': splitUp[20], 'BLV.AtoB': splitUp[25], 'RMSEA.AtoB': splitUp[28]})
+                            causalSummary.append({'Mutation': splitUp[1].strip('"').lstrip('M:'), 'Regulator': splitUp[3].strip('"').lstrip('A:'), 'Bicluster': splitUp[5].strip('"').lstrip('B:bic_'), 'leo.nb.AtoB': splitUp[6], 'mlogp.M.AtoB': splitUp[12], 'PathAB': splitUp[17], 'SEPathAB': splitUp[18], 'ZPathAB': splitUp[19], 'PPathAB': splitUp[20], 'BLV.AtoB': splitUp[25], 'RMSEA.AtoB': splitUp[28]})
 
 ## Output:  Somatic Mutation(1), Regulator(3), Biclster(5), leo.nb.AtoB(6), mlogp.M.AtoB(12), PathAB(17), SEPathAB(18), ZPathAB(19), PPathAB(20), BLV.AtoB(25), RMSEA.AtoB(28)
 header = ['Mutation', 'Regulator', 'Bicluster', 'leo.nb.AtoB', 'mlogp.M.AtoB', 'PathAB', 'SEPathAB', 'ZPathAB', 'PPathAB', 'BLV.AtoB', 'RMSEA.AtoB']
@@ -1769,13 +1768,16 @@ for causalFlow in causalSummary:
     tfs = []
     # 1. MEME and WEEDER Upstream motifs
     for pssm in b1.getPssmsUpstream():
-        for corTf in pssm.getCorrelatedMatches():
+        for subset in subsets:
+            matches = pssm.getCorrelatedMatches(subset)
+            if matches:
+                for corTf in matches:
+                    if corTf['pValue']<=pVCut and abs(corTf['rho'])>=rhoCut:
+                        tfs.append(corTf['factor'])
+        # 2. TFBS_DB
+        for corTf in b1.getAttributes()['tfbs_db_correlated'][subset]:
             if corTf['pValue']<=pVCut and abs(corTf['rho'])>=rhoCut:
                 tfs.append(corTf['factor'])
-    # 2. TFBS_DB
-    for corTf in b1.getAttributes()['tfbs_db_correlated']:
-        if corTf['pValue']<=pVCut and abs(corTf['rho'])>=rhoCut:
-            tfs.append(corTf['factor'])
     # 3. Find Correspondent TF regulators
     if causalFlow['Regulator'] in tfs:
         if not int(causalFlow['Bicluster']) in correspondentRegulators:
@@ -1786,14 +1788,16 @@ for causalFlow in causalSummary:
     miRNAs = []
     # 1. WEEDER 3'UTR
     for pssm in b1.getPssms3pUTR():
-        for miR in pssm.getMatches():
-            if miR['confidence'] in ['8mer','7mer_a1','7mer_m8']:
-                miRNAs += miRNAIDs_rev[miR['factor']]
+        matches = pssm.getMatches()
+        if matches:
+            for miR in matches:
+                if miR['confidence'] in ['8mer','7mer_a1','7mer_m8']:
+                    miRNAs += miRNAIDs_rev[miR['factor']]
     # 2. PITA (not correlated)
-    if float(b1.getAttributes()['pita_3pUTR']['percentTargets'].split(' ')[0])>=percTargets and float(b1.getAttributes()['pita_3pUTR']['pValue'].split(' ')[0])<=pVCut:
+    if float(b1.getAttributes()['pita_3pUTR']['pValue'])<=pVCut and float(b1.getAttributes()['pita_3pUTR']['percentTargets'].split(' ')[0])>=percTargets:
         miRNAs += b1.getAttributes()['pita_3pUTR']['miRNA'].split(' ')
     # 3. TargetScan (not correlated)
-    if float(b1.getAttributes()['targetscan_3pUTR']['percentTargets'].split(' ')[0])>=percTargets and float(b1.getAttributes()['targetscan_3pUTR']['pValue'].split(' ')[0])<=pVCut:
+    if float(b1.getAttributes()['targetscan_3pUTR']['pValue'])<=pVCut and float(b1.getAttributes()['targetscan_3pUTR']['percentTargets'].split(' ')[0])>=percTargets:
         miRNAs += b1.getAttributes()['targetscan_3pUTR']['miRNA'].split(' ')
     # 4. Find Correspondent miRNA regulators
     for miR in miRNAs:
@@ -1803,7 +1807,7 @@ for causalFlow in causalSummary:
             correspondentRegulators[int(causalFlow['Bicluster'])]['miRNA'].append(causalFlow['Regulator'])
 
 ## Put correspondent regulators into cMonkeyWrapper object
-for biclust in correspondenceRegulators.keys():
+for biclust in correspondentRegulators.keys():
     b1 = c1.getBicluster(biclust)
     b1.addAttribute(key='correspondentRegulators',value=correspondentRegulators[biclust])
 
@@ -1941,14 +1945,14 @@ for i in sorted(c1.getBiclusters().keys()):
                                 originalExpanded[subset] = 'Expanded'
                             minCorrelated[subset] = minCorrelated[subset]['factor']+':'+str(minCorrelated[subset]['rho'])+':'+str(minCorrelated[subset]['pValue'])
             writeMe += ([str(pssm1.getEValue()), # E-value
-                        str(pssm1.getPermutedPValue()), # Permuted p-value for motif
+                        #str(pssm1.getPermutedPValue()), # Permuted p-value for motif
                         pssm1.getConsensusMotif(), # Motif consensus sequence
                         matches, # Matches to the motif from TransFac and Jaspar
                         expandedMatches] # Expanded matches usign TFClass
                         + [correlatedMatches[subset]+','+originalExpanded[subset]+','+minCorrelated[subset] for subset in subsets])
         else:
             writeMe += (['NA', # E-value
-                        'NA', # Permuted p-value for motif
+                        #'NA', # Permuted p-value for motif
                         'NA', # Motif consensus sequence
                         'NA', # Matches to the motif from TransFac and Jaspar
                         'NA'] # Expanded matches using TFClass
@@ -2039,9 +2043,17 @@ for i in sorted(c1.getBiclusters().keys()):
             writeMe += ['NA','NA','NA']
 
     #   f. Correpsondent regulators
-    corrspondentRegulators = b1.getAttribute('correspondentRegulators')
-    if not correspondentRegulators==None:
-        writeMe += [' '.join(correspondentRegulators['tf']), ' '.join(correspondentRegulators['miRNA'])]
+    corrRegs = b1.getAttribute('correspondentRegulators')
+    if not corrRegs==None:
+        # Split up by TF and miRNA
+        if not len(corrRegs['tf'])==0:
+            writeMe += [' '.join(sorted(set(corrRegs['tf'])))]
+        else:
+            writeMe += ['NA']
+        if not len(corrRegs['miRNA'])==0:
+            writeMe += [' '.join(sorted(set(corrRegs['miRNA'])))]
+        else:
+            writeMe += ['NA']
     else:
         writeMe += ['NA','NA']
 
