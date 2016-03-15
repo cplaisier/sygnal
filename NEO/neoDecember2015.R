@@ -19,6 +19,15 @@
 # process these data accordingly; searching for a causal
 # directed but not-necessarily-acyclic graph within the 
 # SNP-gene-trait variation data.
+
+
+# Scott Ritchie (scottr@student.unimelb.edu.au)
+# made the code more robust June 2014.
+# Peter Langfelder updated the code in the past.
+
+# Update December2015: comment out code around require(rcom). 
+# The package rcom is not available and the error the code has been
+# working around may not exist anymore.
 #
 # Copyright (c) 2007, 2008, Jason E. Aten  <j.e.aten@gmail.com>
 # Intial implementation: 14 January 2007
@@ -396,6 +405,7 @@ neo=function(datCombined, snpcols=neo.guess.snps(datCombined,pm),
 
    batches = length(pm$enumerated.A.cn)
    for (batch.num in 1:batches) {
+   tryCatch({ # Prevent NEO from aborting mid run
         k=batch.num
 
         print(paste(sep="","*** Edge ",batch.num," of ",batches,
@@ -462,6 +472,18 @@ neo=function(datCombined, snpcols=neo.guess.snps(datCombined,pm),
    #    Excel sheet should be opened automatically 
    #    at end of summary, if not, set pm$excel.path correctly.
    z = summary(r4);
+   }, error = function(e) {
+     warning("NEO crashed fatally when attempting to orient edges between ",
+             pm$enumerated.A.cn[k], " and ", pm$enumerated.B.cn[k],
+             " with error:\n", e, "\n",
+             " skipping this edge.")
+     if (k == 1) {
+       stop("NEO crashed when orienting first edge. No point continuing because",
+            " the final CSV file will be malformed.\n",
+            "Try shuffling your non-SNP columns so the offending edge does not",
+            "occur first.")
+     }
+   })
 
  } # end batch.num loop
 
@@ -961,16 +983,17 @@ if (!require(ggm,quietly=TRUE)) install.packages("ggm");
 if (!require(e1071,quietly=TRUE)) install.packages("e1071");
 if (!require(sem,quietly=TRUE)) install.packages("sem");
 if (!require(MASS,quietly=TRUE)) install.packages("MASS");
+if (!require(matrixStats,quietly=TRUE)) { install.packages("matrixStats"); library(matrixStats);}
 
 # try to pre-empt Excel opening bug...
-if (.Platform$OS.type == "windows") {
-   if (!require(rcom,quietly=TRUE)) {
-      install.packages("rcom"); # try to pro-actively prevent Excel-VBA error in R-2.5 and R(D)COM-2.5
-      library(rcom)
-      comRegisterRegistry()
-      comRegisterServer()
-   }
-}
+#if (.Platform$OS.type == "windows") {
+#   if (!require(rcom,quietly=TRUE)) {
+#      install.packages("rcom"); # try to pro-actively prevent Excel-VBA error in R-2.5 and R(D)COM-2.5
+#      library(rcom)
+#      comRegisterRegistry()
+#      comRegisterServer()
+#   }
+#}
 
 #if (!require(Matrix,quietly=TRUE)) install.packages("Matrix"); # for sparse Matrix
 
@@ -1565,7 +1588,7 @@ check.or.impute.missing.data=function(datCombined,snpcols,pm,check=TRUE) {
       }
 
       # check for non-varying columns
-      s=sd(datCombined,na.rm=TRUE)
+      s=colSds(as.matrix(datCombined),na.rm=TRUE)
       if (any(s==0)) {
          stop(paste(sep="","Some datCombined columns had no variation. Please remove these columns from datCombined: ",colnames(datCombined)[s==0]))
       }
@@ -2107,9 +2130,9 @@ autolog.sem=function(pm,ram,covx,N,...) {
   # improves matters.
   if (pm$sem.fit.correlation.instead.of.covariance) { covx=covx2cor(covx); }
  
-# PL: wrap the   r=try(sem(ram,covx,N,...)) in a suppressWarnings()
+# PL: wrap the   r=try(sem(ram,covx,N,...)) in a suppressWarnings() and silent;
  
-  suppressWarnings({ r=try(sem(ram,covx,N,...)) });
+  suppressWarnings({ r=try(sem(ram,covx,N,...), silent = TRUE) });
   if(inherits(r, "try-error") || !is.null(last.warning)) {
      if(inherits(r, "try-error")) {
            r$had.error=geterrmessage();
@@ -2119,7 +2142,7 @@ autolog.sem=function(pm,ram,covx,N,...) {
               .Global.SEM.fail.count <<- .Global.SEM.fail.count + 1;
             }
            logfile = paste(sep="",pm$neo.log.file,".badsem.",.Global.SEM.fail.count,".rdat");
-           print(paste("sem() call failed...saving call arguments to file: ",logfile));
+           #print(paste("sem() call failed...saving call arguments to file: ",logfile));
      } else {
            r$had.warning=last.warning;
            if (!exists(".Global.SEM.warn.count")) {
@@ -2128,7 +2151,7 @@ autolog.sem=function(pm,ram,covx,N,...) {
               .Global.SEM.warn.count <<- .Global.SEM.warn.count + 1;
             }
            logfile = paste(sep="",pm$neo.log.file,".warnsem.",.Global.SEM.warn.count,".rdat");
-           print(paste("sem() call generated warning...saving call arguments to file: ",logfile));
+           #print(paste("sem() call generated warning...saving call arguments to file: ",logfile));
      }
      badsem=list();
      badsem$pm=pm;
@@ -4009,7 +4032,7 @@ cor.ab = rho[1]
         leo.i=c()
         leo.o=c()
         leo.r=c()
-	ab=c()
+  ab=c()
         ba=c()
         unr=c() 
         hid=c()
@@ -4176,7 +4199,7 @@ omega.gamma.model=function(sim.start=NULL) {
         leo.i=c()
         leo.o=c()
         leo.r=c()
-	ab=c()
+  ab=c()
         ba=c()
         unr=c() 
         hid=c()
@@ -5886,8 +5909,8 @@ losem.walk.two.steps.max.max=function(x,pm,snpcols, non.snp.cols,af,no.obs,cx,co
               twofer.eo[A,B]=(m1ab[1]);
               twofer.eo[B,A]=-twofer.eo[A,B];
 
-	      BestAB.single.marker.RMSEA[A,B] = min(m1ab.rmsea)
-	      BestAB.single.marker.RMSEA.the.marker[A,B] = marker.to.string.of.marker.and.prob(Mset,cn,m1ab.log.list,wh=which(m1ab.rmsea == min(m1ab.rmsea)))  # get all the markers with minimal RMSEA, if multiple.
+        BestAB.single.marker.RMSEA[A,B] = min(m1ab.rmsea)
+        BestAB.single.marker.RMSEA.the.marker[A,B] = marker.to.string.of.marker.and.prob(Mset,cn,m1ab.log.list,wh=which(m1ab.rmsea == min(m1ab.rmsea)))  # get all the markers with minimal RMSEA, if multiple.
 
               BestAB.single.marker.RMSEA[B,A] = NA # leave blank b/c no markers stronger into B than A
 
@@ -5956,9 +5979,9 @@ losem.walk.two.steps.max.max=function(x,pm,snpcols, non.snp.cols,af,no.obs,cx,co
 
               BestAB.single.marker.RMSEA[A,B] = NA # no M.A markers, so we leave blank
 
-	      BestAB.single.marker.RMSEA[B,A] = min(m1ab.rmsea)
+        BestAB.single.marker.RMSEA[B,A] = min(m1ab.rmsea)
 
-	      BestAB.single.marker.RMSEA.the.marker[B,A] = marker.to.string.of.marker.and.prob(Mset,cn,m1ab.log.list,wh=which(m1ab.rmsea == min(m1ab.rmsea)))  # get all the markers with minimal RMSEA, if multiple.
+        BestAB.single.marker.RMSEA.the.marker[B,A] = marker.to.string.of.marker.and.prob(Mset,cn,m1ab.log.list,wh=which(m1ab.rmsea == min(m1ab.rmsea)))  # get all the markers with minimal RMSEA, if multiple.
 
               # recompute z for the top pick, to get all the right summary statistics
               z=compare.local.sems(pm=pm,Mset[top.m1],parent,child,x);
@@ -6179,10 +6202,10 @@ losem.walk.two.steps.max.max=function(x,pm,snpcols, non.snp.cols,af,no.obs,cx,co
              # disagreement in terms of signs.
              twofer.eo[A,B]=twofer.eo[B,A]=NA;
 
-	     Aprior.m1.num=which(cn==Aprior.m1);
-	     Aprior.m2.num=which(cn==Aprior.m2);
-	     Bprior.m1.num=which(cn==Bprior.m1);
-	     Bprior.m2.num=which(cn==Bprior.m2);
+       Aprior.m1.num=which(cn==Aprior.m1);
+       Aprior.m2.num=which(cn==Aprior.m2);
+       Bprior.m1.num=which(cn==Bprior.m1);
+       Bprior.m2.num=which(cn==Bprior.m2);
 
              # A: display the component Z scores and correlations.
              A.sz1=paste(sep=""," [[Zm1B(",display.Zm1B(Aprior.m1.num,B,covx,pm),")-Zm1B|A(",display.Zm1BgivenA(Aprior.m1.num,B,A,covx,pm),")]] \n");
@@ -6323,8 +6346,8 @@ losem.walk.two.steps.weighted.mean.mlreg=function(x,pm,snpcols, non.snp.cols,af,
               AB.vs.NextBest[A,B] = z$LEO.NB.AtoB
               AB.vs.NextBest[B,A] = z$LEO.NB.BtoA
 
-	      BLV[A,B] = z$BLV.AtoB
-	      BLV[B,A] = z$BLV.BtoA
+        BLV[A,B] = z$BLV.AtoB
+        BLV[B,A] = z$BLV.BtoA
 
               ZPathAB[A,B] = z$ZPathAB
               ZPathAB[B,A] = z$ZPathBA
@@ -6364,8 +6387,8 @@ losem.walk.two.steps.weighted.mean.mlreg=function(x,pm,snpcols, non.snp.cols,af,
               AB.vs.NextBest[B,A] = z$LEO.NB.AtoB
               AB.vs.NextBest[A,B] = z$LEO.NB.AcollideB
 
-	      BLV[B,A] = z$BLV.AtoB
-	      BLV[A,B] = z$BLV.BtoA
+        BLV[B,A] = z$BLV.AtoB
+        BLV[A,B] = z$BLV.BtoA
 
               ZPathAB[B,A] = z$ZPathAB
               ZPathAB[A,B] = z$ZPathBA
@@ -6414,7 +6437,7 @@ losem.walk.two.steps.weighted.mean.mlreg=function(x,pm,snpcols, non.snp.cols,af,
               log.summary=paste(sep="\n",log.summaryA, log.summaryB,"\n",stringify(summary(step.A)),stringify(summary(step.B)),collapse="\n");
 
       # reassing M.A and M.B, so we can re-use the following code, inserting the weights....
-	old.M.A = M.A
+  old.M.A = M.A
       old.M.B = M.B
       M.A = A.who.index.cn
       M.B = B.who.index.cn
@@ -6824,7 +6847,7 @@ multione.losem.walk.two.steps.weighted.mean.mlreg=function(x,pm,snpcols, non.snp
 
               LEO.I[A,B]=z$LEO.I.AtoB;
               AB.vs.NextBest[A,B] = z$LEO.NB.AtoB
-	      BLV[A,B] = z$BLV.AtoB
+        BLV[A,B] = z$BLV.AtoB
               ZPathAB[A,B] = z$ZPathAB
          }
       
@@ -6852,7 +6875,7 @@ multione.losem.walk.two.steps.weighted.mean.mlreg=function(x,pm,snpcols, non.snp
 
               LEO.I[B,A]=z$LEO.I.AtoB
               AB.vs.NextBest[B,A] = z$LEO.NB.AtoB
-	      BLV[B,A] = z$BLV.AtoB
+        BLV[B,A] = z$BLV.AtoB
               ZPathAB[B,A] = z$ZPathAB
             }
       
@@ -7719,7 +7742,7 @@ for (i in 1:(length(non.snp.cols)-1)) {
                  n.twofer.eo[A,B] = n.twofer.eo[B,A] = 4; # vestigial legacy from previous methodology
 
                  Aprior.m1.num=which(cn==Aprior.m1);
-	         Aprior.m2.num=which(cn==Aprior.m2);
+           Aprior.m2.num=which(cn==Aprior.m2);
 
                  # display the component Z scores and correlations.
                  sz1=paste(sep=""," [[Zm1B(",display.Zm1B(which(cn==Aprior.m1),B,covx,pm),")-Zm1B|A(",display.Zm1BgivenA(which(cn==Aprior.m1),B,A,covx,pm),")]] \n");
@@ -7747,9 +7770,9 @@ for (i in 1:(length(non.snp.cols)-1)) {
              n.twofer.eo[A,B]=n.twofer.eo[B,A]=NA;
 
                  Aprior.m1.num=which(cn==Aprior.m1);
-	         Aprior.m2.num=which(cn==Aprior.m2);
-	         Bprior.m1.num=which(cn==Bprior.m1);
-	         Bprior.m2.num=which(cn==Bprior.m2);
+           Aprior.m2.num=which(cn==Aprior.m2);
+           Bprior.m1.num=which(cn==Bprior.m1);
+           Bprior.m2.num=which(cn==Bprior.m2);
 
              # A: display the component Z scores and correlations.
              A.sz1=paste(sep=""," [[Zm1B(",display.Zm1B(Aprior.m1.num,B,covx,pm),")-Zm1B|A(",display.Zm1BgivenA(Aprior.m1.num,B,A,covx,pm),")]] \n");
@@ -7915,7 +7938,7 @@ for (i in 1:(length(non.snp.cols)-1)) {
       B.who.index.cn = M.B[B.who.index]; # get column index within x
 
       # reassing M.A and M.B, so we can re-use the following code, inserting the weights....
-	old.M.A = M.A
+  old.M.A = M.A
       old.M.B = M.B
       M.A = A.who.index.cn
       M.B = B.who.index.cn
@@ -8170,7 +8193,7 @@ make.ram=function (m,list.of.hidden.confounded.pair.indices=NULL)
 
 #              # new way,  works, but same as above
 #              latent = paste(sep="","Lat",pair.count);
-#	      
+#       
 #              edgelist=c(edgelist,paste(latent,"<->",latent));
 #              #my.par=c(my.par,paste(sep="","Var.",latent));
 #              my.par=c(my.par,NA);
@@ -8366,10 +8389,10 @@ if(exists("checkRVV") ) rm(checkRVV);
 checkRVV=function(covx, cx, sink, pa1, pa2, gpa2.1, gpa2.2, pm, cn) {
       #print(paste("checkRVV checking ",cn[pa2],"->",cn[sink],"using",cn[gpa2.1],cn[gpa2.2]));
       r=list(); r$rvv=FALSE;
-	v1=checkV(covx,cx, sink, pa1, pa2, pm);
+  v1=checkV(covx,cx, sink, pa1, pa2, pm);
       if (!v1$v) { return(r); } #print("aborting checkRVV:failed first v-structure"); return(r); }
       
-	v2=checkV(covx, cx, pa2, gpa2.1, gpa2.2, pm);
+  v2=checkV(covx, cx, pa2, gpa2.1, gpa2.2, pm);
       if (!v2$v) { return(r); } # print("aborting checkRVV:failed second v-structure"); return(r); }
 
       apc1 = abs(pcor(c(gpa2.1,sink,pa2),covx));
@@ -8378,11 +8401,11 @@ checkRVV=function(covx, cx, sink, pa1, pa2, gpa2.1, gpa2.2, pm, cn) {
       gp.gc1 = cx[gpa2.1,sink];
       gp.gc2 = cx[gpa2.2,sink];
 
-	#print(paste("RVV diag: cor between",cn[gpa2.1],"and",cn[sink]," given ",cn[pa2],":",apc1));
-	#print(paste("RVV diag: cor between",cn[gpa2.2],"and",cn[sink]," given ",cn[pa2],":",apc2));
+  #print(paste("RVV diag: cor between",cn[gpa2.1],"and",cn[sink]," given ",cn[pa2],":",apc1));
+  #print(paste("RVV diag: cor between",cn[gpa2.2],"and",cn[sink]," given ",cn[pa2],":",apc2));
 
-	#print(paste("RVV diag: grandparent-child cor between",cn[gpa2.1],"and",cn[sink],":",gp.gc1));
-	#print(paste("RVV diag: grandparent-child cor between",cn[gpa2.2],"and",cn[sink],":",gp.gc2));
+  #print(paste("RVV diag: grandparent-child cor between",cn[gpa2.1],"and",cn[sink],":",gp.gc1));
+  #print(paste("RVV diag: grandparent-child cor between",cn[gpa2.2],"and",cn[sink],":",gp.gc2));
 
       if (apc1 <= pm$cor.ind.th && gp.gc1 > pm$cor.dep.th) {
           r$rvv=TRUE;
@@ -8626,7 +8649,7 @@ filterSNP.maxpriority.PC=function(snpcols, non.snp.cols, x, cor.below.cluster.de
     cn.snp = colnames(snps);
 
     # sanity
-    s=sd(snps)
+    s=colSds(as.matrix(snps))
     if(any(s==0)) {
        stop(paste("Fatal error: Some SNPs have no variation: ",cn.snp[s==0]))
     }
@@ -8687,7 +8710,7 @@ filterSNP.maxpriority.PC=function(snpcols, non.snp.cols, x, cor.below.cluster.de
     if (1 == top.N.snps.per.trait) { 
         max.snp = matrix(nrow=top.N.snps.per.trait,cor.snp.non[1:top.N.snps.per.trait,]);
         max.snp[]=NA; 
-	rownames(max.snp)=NULL;
+  rownames(max.snp)=NULL;
         colnames(max.snp)=colnames(cor.snp.non)
     }
 
@@ -9175,7 +9198,7 @@ impute.nn=function(x,snpcols,pm) {
     for (j in 1:nc) {
           if ((j %in% snpcols) && any(is.na(x[,j]))) {
               pm.print(pm,paste("impute.nn(): imputing column: ",cn[j],date()));
-	      my.neighbors = corx[j,];
+        my.neighbors = corx[j,];
               my.neighbors[j]=-2; # put self last
               ix = sort(my.neighbors,decreasing=T,index.return=T)$ix;
               for(i in which(is.na(x[,j]))) {
@@ -9227,7 +9250,7 @@ impute.rpart=function(x,snpcols) {
 #    for (i in 1:nc) {
 #        print(paste("Factorizing column",i));
 #        if (i %in% snpcols) {
-#	    if (i==1) {
+#     if (i==1) {
 #                x=data.frame(factor(x[,i]),x[,-i]);
 #            } else if (i < nc) {
 #                x=data.frame(x[,1:(i-1)],as.factor(x[,i]),x[,(i+1):nc]);
@@ -9248,12 +9271,12 @@ impute.rpart=function(x,snpcols) {
                  # predict this SNP column
                  f.upper <- as.formula(paste(cn[i], "~", paste(cn[-i], collapse = " + ")))
                  rp=rpart(f.upper,data=x,method="class",control=rpart.control(cp=.0001,minsplit=2,minbucket=1,maxsurrogate=10))
-	         xnew[,i]=predict(rp,newdata=x,type="class"); #set newdata=x to get predictions on the NA columns too
+           xnew[,i]=predict(rp,newdata=x,type="class"); #set newdata=x to get predictions on the NA columns too
               } else {
                  # predict this qualitative column
                  f.upper <- as.formula(paste(cn[i], "~", paste(cn[-i], collapse = " + ")))
                  rp=rpart(f.upper,data=x,method="anova",control=rpart.control(cp=.0001,minsplit=2,minbucket=1,maxsurrogate=10))
-	         xnew[,i]=predict(rp,newdata=x,type="vector"); #set newdata=x to get predictions on the NA columns too
+           xnew[,i]=predict(rp,newdata=x,type="vector"); #set newdata=x to get predictions on the NA columns too
               }
       }
       
@@ -9686,10 +9709,10 @@ neo.edge.filters=function(r,...) {
                  }
       # take out VCdep for now
       #  we ARE using the min.k.abs.pcor, AND the pcor.filtered[,] so save the loopage.
-   	         #print(paste(i,j,pcijk, pcijk > pm$induced.dep.th, 
+             #print(paste(i,j,pcijk, pcijk > pm$induced.dep.th, 
       #                     #cx[i,j] <= pm$cor.ind.th, cx[i,j]));
                   if (pcijk < pm$k.pcor.th) {
-   	             pcor.filtered[i,j] = pcor.filtered[j,i]=0;
+                 pcor.filtered[i,j] = pcor.filtered[j,i]=0;
                   }
    #               if (pcijk >= pm$induced.dep.th && cx[i,j] <= pm$cor.ind.th) {
    #                   Vcdep[i,j,k]= rev$ix[k]; Vcdep[j,i,k]= rev$ix[k];
@@ -10363,7 +10386,7 @@ for (sink  in sink.cand) {
                                  zeo[sink,B] = zeo[sink,B] + ab$zeo; nzeo[sink,B]=nzeo[sink,B]+4;
 
                                  msg = paste("found CCO directional edge from", cn[B], "to", cn[sink],"supported by SNPs:",cn[j],"and",cn[m1]);
-					   pm.print(pm,msg);
+             pm.print(pm,msg);
                                  edge.log=rbind(edge.log,msg);
                                  M[B,sink]=1; 
                                  #af[sink,B]=0; # comment out: leave af is is! ADD stuff to M instead.
@@ -10862,7 +10885,7 @@ if (pm$doing.permutation) {
 # and arrange non-snps in a half-circle underneath.
 
 # PRE: the SNPs are the first 1:numsnps columns of datCombined
-	
+  
 # start mostly inside the unit circle centered at zero
 snp.y=rep(.7,numsnps)
 # bump the evens up to try to get the labels visible again when we have lots of SNPS
@@ -10984,34 +11007,34 @@ do.graph.placement=function(snpcols,numsnps, nc, num.non.snps,non.snp.cols) {
    # and arrange non-snps in a half-circle underneath.
 
    # PRE: the SNPs are the first 1:numsnps columns of datCombined
-	
+  
    # start mostly inside the unit circle centered at zero
 
-	snp.y=rep(.7,numsnps)
+  snp.y=rep(.7,numsnps)
 
-	# bump the evens up to try to get the labels visible again when we have lots of SNPS
-	odd.snps=(0:ceiling((numsnps/2)-1))*2+1;
-	snp.y[odd.snps] = snp.y[odd.snps]-.08;
-	snp.x=-1+2*(0:(numsnps-1))/(numsnps-1);
+  # bump the evens up to try to get the labels visible again when we have lots of SNPS
+  odd.snps=(0:ceiling((numsnps/2)-1))*2+1;
+  snp.y[odd.snps] = snp.y[odd.snps]-.08;
+  snp.x=-1+2*(0:(numsnps-1))/(numsnps-1);
 
-	if (numsnps==1) {
-	   snp.x=0;
-	   } 
+  if (numsnps==1) {
+     snp.x=0;
+     } 
 
-	   radius=nc/2;
-	   ang.inc = pi/(num.non.snps-1);
-	   ang = (0:(num.non.snps-1))* ang.inc + pi;
-	   non.snp.place=complex(argument=ang,modulus=1);
-	   non.snp.x = Re(non.snp.place);
-	   non.snp.y = Im(non.snp.place);
+     radius=nc/2;
+     ang.inc = pi/(num.non.snps-1);
+     ang = (0:(num.non.snps-1))* ang.inc + pi;
+     non.snp.place=complex(argument=ang,modulus=1);
+     non.snp.x = Re(non.snp.place);
+     non.snp.y = Im(non.snp.place);
 
-	   place=matrix((10+(c(snp.x,non.snp.x, snp.y, non.snp.y)+1)*40),nrow=nc,ncol=2)
+     place=matrix((10+(c(snp.x,non.snp.x, snp.y, non.snp.y)+1)*40),nrow=nc,ncol=2)
 
-	   # now, in case our PRE-condition that the SNPs were not first
-	   # in terms of order, re-do placement to correct for that...
-	   new.place=place;
-	   new.place[snpcols,]=place[1:length(snp.x),]
-	   new.place[non.snp.cols,]=place[(length(snp.x)+1):nrow(place),]
+     # now, in case our PRE-condition that the SNPs were not first
+     # in terms of order, re-do placement to correct for that...
+     new.place=place;
+     new.place[snpcols,]=place[1:length(snp.x),]
+     new.place[non.snp.cols,]=place[(length(snp.x)+1):nrow(place),]
 
    place=new.place
 }
@@ -16382,14 +16405,14 @@ make.rqtl.file=function(x,snpcols,traitcols,file.name="my.read.cross.file.csv", 
   
   # make a character data frame
 
-  ##   T264	D10M44	D1M3	D1M75	D1M215
-  ## 	        1	1	1	1  <- chromosome
-  ## 	        0	0.99675	24.84773	40.41361 <- centomorgans
-  ## 118.317	B	B	B	H
-  ## 264	-	B	B	B
-  ## 194.917	-	H	H	H
-  ## 264	B	B	H	H
-  ## 145.417	H	H	H	H
+  ##   T264 D10M44  D1M3  D1M75 D1M215
+  ##          1 1 1 1  <- chromosome
+  ##          0 0.99675 24.84773  40.41361 <- centomorgans
+  ## 118.317  B B B H
+  ## 264  - B B B
+  ## 194.917  - H H H
+  ## 264  B B H H
+  ## 145.417  H H H H
 
   nc=ncol(x)
   nr=nrow(x)
@@ -16876,7 +16899,7 @@ compare.robustness.studies=function() {
 
   f1=10
   f2=11
-  f3=12	
+  f3=12 
 
   load(my.27robust.files[f1]) # r
   greedy.frames = get.frames(r$greedy.100.causal)
@@ -16938,7 +16961,7 @@ compare.robustness.studies=function() {
   
 f1=19
   f2=20
-  f3=21	
+  f3=21 
 
   load(my.27robust.files[f1]) # r
   greedy.frames = get.frames(r$greedy.100.causal)
@@ -17076,7 +17099,7 @@ names(fg.for.mean)=names(fg.for.sd)=paste(1:20)
   
 f1=10
   f2=11
-  f3=12	
+  f3=12 
 
   load(my.27robust.files[f1]) # r
   greedy.frames = get.frames(r$greedy.100.causal)
@@ -17223,7 +17246,7 @@ names(fg.for.mean)=names(fg.for.sd)=paste(1:20)
   
 f1=16
   f2=17
-  f3=18	
+  f3=18 
 
   load(my.27robust.files[f1]) # r
   greedy.frames = get.frames(r$greedy.100.causal)
@@ -17548,8 +17571,9 @@ create.permutation.report=function(pm,cn.datCombined,snpcols) {
       cur.row = aur[i]
       w = which(cur.row == perms[,1]) # first column has edge names
       if (length(w)>1) {
+         ##### FIXME: the line below appears wrong; did the author mean colMeans instead of mean?
          perm.mean[i,4:ncol(perms)] = mean(perms[w,4:ncol(perms)],na.rm=TRUE)
-         perm.sd[i,4:ncol(perms)] = sd(perms[w,4:ncol(perms)],na.rm=TRUE)
+         perm.sd[i,4:ncol(perms)] = colSds(as.matrix(perms[w,4:ncol(perms)]),na.rm=TRUE)
          perm.percent.good[i,4:ncol(perms)]=apply(!is.na.or.nan(perms[w,4:ncol(perms)]),2,sum)/pm$number.BLOCK.permutations
          perm.shapiro[i,4:ncol(perms)] = apply(perms[w,4:ncol(perms)],2,fail.proof.shapiro.test)
 

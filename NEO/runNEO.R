@@ -1,3 +1,5 @@
+loc1 = '/local/cMonkey/gbmTCGA/gbmTCGA.pita_2000/'
+
 # Read in the 
 d1 = read.csv('clpMerge_21nov.csv',header=T,row.names=1)
 
@@ -21,6 +23,7 @@ geneExp = d1[which(c(sapply(rownames(d1), function(x){ (strsplit(x,split=':')[[1
 genes = c(sapply(rownames(geneExp), function(x){ (strsplit(x,split=':')[[1]])[3] }))
 
 ## Get the mutations and CNVs
+mutations = as.matrix(d1[which(c(sapply(rownames(d1), function(x){ (strsplit(x,split=':')[[1]])[2] }))=='GNAB'),])
 # Coding potential
 mutations_code_potential = as.matrix(d1[intersect(which(c(sapply(rownames(d1), function(x){ (strsplit(x,split=':')[[1]])[2] }))=='GNAB'),which(c(sapply(rownames(d1), function(x){ (strsplit(x,split=':')[[1]])[8] }))=='code_potential_somatic')),])
 mut2_code_potential = sapply(rownames(mutations_code_potential), function(mut1) { mean(as.numeric(mutations_code_potential[mut1,]), na.rm=T) })
@@ -45,7 +48,8 @@ regExp = rbind(tfExp, miRNAExp)
 regExp = matrix(ncol=ncol(regExp), nrow=nrow(regExp), data=as.numeric(regExp), dimnames=dimnames(regExp))
 
 ## Load bicluster eigengenes
-be1 = read.csv('../output/biclusterFirstPrincComponents.csv',row.names=1, header=T)
+be1 = read.csv(paste(loc1,'sygnal/output/biclusterFirstPrincComponents.csv',sep=''),row.names=1, header=T)
+rownames(be1) = paste('bic',rownames(be1),sep='_')
 ol1 = intersect(colnames(be1),colnames(mutations2))
 d2 = rbind(as.matrix(mutations2[,ol1]), as.matrix(regExp[,ol1]), as.matrix(be1[,ol1]))
 d3 = t(na.omit(t(d2)))
@@ -53,16 +57,16 @@ d3 = t(na.omit(t(d2)))
 ## Use parallel processing to calculate t-test p-values and fold-changes faster
 library(doParallel)
 registerDoParallel(cores=4)
-if(!file.exists('mut_reg_t_test_p_values.csv')) {
+if(!file.exists(paste(loc1,'sygnal/output/mut_reg_t_test_p_values.csv',sep=''))) {
     m1 = foreach(mut1=rownames(mutations2), .combine=rbind) %dopar% sapply(rownames(regExp), function(reg1) { t.test(as.numeric(d3[reg1,]) ~ as.numeric(d3[mut1,]))$p.value } )
     rownames(m1) = rownames(mutations2)
     fc1 = foreach(mut1=rownames(mutations2), .combine=rbind) %dopar% sapply(rownames(regExp), function(reg1) { median(2^as.numeric(d3[reg1,which(d3[mut1,]==0)]))/median(2^as.numeric(d3[reg1,which(d3[mut1,]==1)])) } )
     rownames(fc1) = rownames(mutations2)
-    write.csv(m1,'mut_reg_t_test_p_values.csv')
-    write.csv(fc1,'mut_reg_fold_changes.csv')
+    write.csv(m1,paste(loc1,'sygnal/output/mut_reg_t_test_p_values.csv',sep=''))
+    write.csv(fc1,paste(loc1,'sygnal/output/mut_reg_fold_changes.csv',sep=''))
 } else {
-    m1 = read.csv('mut_reg_t_test_p_values.csv',header=T,row.names=1)
-    fc1 = read.csv('mut_reg_fold_changes.csv',header=T,row.names=1)
+    m1 = read.csv(paste(loc1,'sygnal/output/mut_reg_t_test_p_values.csv',sep=''),header=T,row.names=1)
+    fc1 = read.csv(paste(loc1,'sygnal/output/mut_reg_fold_changes.csv',sep=''),header=T,row.names=1)
 }
 
 ## Select which mutations are associated with which regualtors
@@ -75,33 +79,32 @@ sigRegFC = sapply(rownames(m1), function(x) { colnames(m1)[intersect(which(m1[x,
 ########################
 ## Use for filtering:
 #  1. Signficant differntial expression of regulator between wt and mutant (FC <= 0.8 or FC >= 1.25, and T-test p-value <= 0.05)
-registerDoParallel(4)
-dir.create('../output/causality')
+source('neoDecember2015.R')
+registerDoParallel(12)
+dir.create(paste(loc1,'sygnal/output/causality',sep=''))
 for(mut1 in names(sigRegFC)) {
     # Make a place to store out the data from the analysis
     mut2 = mut1
     if(nchar(mut2)>75) {
         mut2 = substr(mut2,1,75)
     }
-    dir.create(paste('../output/causality/causal_',mut2,sep=''))
+    dir.create(paste(loc1,'sygnal/output/causality/causal_',mut2,sep=''))
 
     # Change the names to be compatible with NEO
     print(paste('Starting ',mut1,'...',sep=''))
     foreach(reg1=sigRegFC[[mut1]]) %dopar% {
-        source('CausalityFunctions.txt')
-        source('updatedneo.txt')
-        # Make the data matrix will all genes
+        # Make the data matrix will all genes strsplit(mut1)[[1]][1]
         d3 = t(na.omit(t(d2[c(mut1,reg1,rownames(be1)),])))
         dMut1 = matrix(data=as.numeric(d3),nrow=dim(d3)[1],ncol=dim(d3)[2],byrow=F,dimnames=dimnames(d3))
         print(paste('  Starting ',mut1,' vs. ', reg1,' testing ', length(rownames(be1)), ' biclusters...', sep=''))
         sm1 = try(single.marker.analysis(t(dMut1),1,2,3:length(rownames(dMut1))),silent=TRUE)
         if (!(class(sm1)=='try-error')) {
-            write.csv(sm1[order(sm1[,6],decreasing=T),],paste('../output/causality/causal_',mut2,'/sm.nonsilent_somatic.',mut2,'_',reg1,'.csv',sep=''))
-            print(paste('  Finished ',mut1,'.',sep=''))
+            write.csv(sm1[order(sm1[,6],decreasing=T),],paste(loc1,'sygnal/output/causality/causal_',mut2,'/sm.nonsilent_somatic.',mut2,'_',reg1,'.csv',sep=''))
+            print(paste('Finished ',reg1,'.',sep=''))
         } else {
             print(paste('  Error ',mut1,'.',sep=''))
         }
     }
-    print('Done.')
+    print(paste('Finished ',mut1,'.',sep=''))
 }
 

@@ -1657,7 +1657,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
     ## Read in residual permutations to use for filtering          ##
     #################################################################
     print 'Load residual permuted p-values...'
-    with open('output/residualPermutedPvalues_permAll_vSubsets.csv','r') as inFile:
+    with open('output/residualPermutedPvalues_permAll.csv','r') as inFile:
         # "","bicluster","n.rows","n.cols","orig.resid","avg.perm.resid","perm.p","orig.resid.norm","avg.norm.perm.resid","norm.perm.p","pc1.var.exp","avg.pc1.var.exp","pc1.perm.p"
         inFile.readline()
         inLines = inFile.readlines()
