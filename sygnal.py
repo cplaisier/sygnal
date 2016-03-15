@@ -70,7 +70,7 @@ SYNONYM_PATH = '../synonymThesaurus.csv.gz'
 MIRNA_FASTA_PATH = 'miRNA/hsa.mature.fa'  # Need to update this to the latest database
 RATIOS_PATH = '../gbmTCGA_exprMat_medianFiltered.tsv'
 ALL_RATIOS_PATH = 'expression/gbmTCGA_exprMat.tsv'
-
+CMONKEY2_RUNDB = '../out/cmonkey_run.db'
 
 #################################################################
 ## Functions                                                   ##
@@ -381,35 +381,39 @@ def miRNA_mappings():
     return miRNAIDs, miRNAIDs_rev
 
 
+def read_cmonkey_run(path):
+    """ Load cMonkey Object - turns cMonkey data into objects"""
+    output_path = 'output/c1.pkl'
+
+    # If this is the first time then load from the RData file
+    if not os.path.exists(output_path):
+        c1 = cMonkeyWrapper(path, meme_upstream=False, weeder_upstream=False,
+                            weeder_3pUTR=False, tfbs_db=False,
+                            pita_3pUTR=False,
+                            targetscan_3pUTR=False) #, geneConv=entrez2id)
+
+        with open(output_path, 'wb') as pklFile:
+            cPickle.dump(c1, pklFile)
+
+    # Otherwise load the dumped pickle file if it exists
+    else:
+        print 'Loading precached cMonkey object...'
+        with open(output_path, 'rb') as pklFile:
+            c1 = cPickle.load(pklFile)
+        print 'Done.\n'
+
+    return c1
+
+
 # Initialize sygnal output directory and conversion dictionaries
 sygnal_init()
 id2entrez, entrez2id = read_synonyms()
 miRNAIDs, miRNAIDs_rev = miRNA_mappings()
 
-
 clusterFileNames = {}
 
 if not os.path.exists('output/c1_all.pkl'):
-    #################################################################
-    ## Load cMonkey Object - turns cMonkey data into objects       ##
-    #################################################################
-
-    # If this is the first time then load from the RData file
-    if not os.path.exists('output/c1.pkl'):
-        c1 = cMonkeyWrapper('../out/cmonkey_run.db', meme_upstream=0,
-                            weeder_upstream=0, weeder_3pUTR=0,
-                            tfbs_db=0, pita_3pUTR=0,
-                            targetscan_3pUTR=0 ) #, geneConv=entrez2id)
-
-        with open('output/c1.pkl','wb') as pklFile:
-            cPickle.dump(c1,pklFile)
-    # Otherwise load the dumped pickle file if it exists
-    else:
-        print 'Loading precached cMonkey object..'
-        with open('output/c1.pkl','rb') as pklFile:
-            c1 = cPickle.load(pklFile)
-        print 'Done.\n'
-
+    c1 = read_cmonkey_run(CMONKEY2_RUNDB)
     
     #################################################################
     ## Fill in the missing parts                                   ##
@@ -424,7 +428,7 @@ if not os.path.exists('output/c1_all.pkl'):
 
     ## A. Upstream motifs (MEME) ##
     # If MEME hasn't been run on the biclusters upstream sequences then do so
-    if not c1.meme_upstream==1:
+    if not c1.meme_upstream:
         print 'Running MEME on Upstreams:'
         # Use already run MEME results if they exist
         if not os.path.exists('output/meme_upstream.pkl'):
@@ -444,7 +448,6 @@ if not os.path.exists('output/c1_all.pkl'):
             for b1 in c1.getBiclusters():
                 clusterFileName = 'tmp/meme/fasta/bicluster_'+str(b1)+'.fasta'
                 seqs = c1.getBiclusterSeqsUpstream(b1)
-                print len(seqs)
                 if len(seqs) > 0:
                     o1.append(b1)
                     clusterFileNames[b1] = clusterFileName
@@ -485,11 +488,11 @@ if not os.path.exists('output/c1_all.pkl'):
         print 'Done with MEMEing.\n'
 
         # MEME upstream has been run on cMonkey run
-        c1.meme_upstream = 1
+        c1.meme_upstream = True
 
     ## B. Upstream motifs (Weeder) ##
     # If Weeder hasn't been run on the biclusters upstream sequences then do so
-    if not c1.weeder_upstream==1:
+    if not c1.weeder_upstream:
         print 'Running Weeder on Upstreams:'
         # If this has been run previously just load it up
         if not os.path.exists('output/weeder_upstream.pkl'):
@@ -552,11 +555,11 @@ if not os.path.exists('output/c1_all.pkl'):
         print 'Done with Weedering.\n'
 
         # Weeder upstream has been run on cMonkey run
-        c1.weeder_upstream = 1
+        c1.weeder_upstream = True
 
     # C. 3' UTR Weeder-miRvestigator (Weeder)
     # If Weeder hasn't been run on the biclusters 3' UTR sequences then do so
-    if not c1.weeder_3pUTR==1:
+    if not c1.weeder_3pUTR:
         print 'Running Weeder on 3\' UTRs:'
         # If this has been run previously just load it up
         if not os.path.exists('output/weeder_3pUTR.pkl'):
@@ -616,11 +619,11 @@ if not os.path.exists('output/c1_all.pkl'):
         print 'Done with 3\'UTR Weedering.\n'
 
         # Weeder 3pUTR has been run on cMonkey run
-        c1.weeder_3pUTR = 1
+        c1.weeder_3pUTR = True
 
     # D. Upstream TFBS DB enrichment Analysis
     # If tfbs_db enrichment hasn't been calculated for the biclusters then do so
-    if not c1.tfbs_db==1:
+    if not c1.tfbs_db:
         print 'Running TFBS_DB on Biclusters:'
         # If this has been run previously just load it up
         if not os.path.exists('output/tfbs_db.pkl'):
@@ -738,11 +741,11 @@ if not os.path.exists('output/c1_all.pkl'):
         print 'Done.\n'
 
         # TFBS_DB has been run on cMonkey run
-        c1.tfbs_db = 1
+        c1.tfbs_db = True
         
     # E. 3' UTR PITA
     # If PITA enrichment hasn't been calculated for the biclusters then do so
-    if not c1.pita_3pUTR==1:
+    if not c1.pita_3pUTR:
         print 'Running PITA on Biclusters:'
         # If this has been run previously just load it up
         if not os.path.exists('output/pita_3pUTR.pkl'):
@@ -863,11 +866,11 @@ if not os.path.exists('output/c1_all.pkl'):
         print 'Done.\n'
 
         # PITA 3pUTR has been run on cMonkey run
-        c1.pita_3pUTR = 1
+        c1.pita_3pUTR = True
 
     # F. 3' UTR TargetScan
     # If TargetScan enrichment hasn't been calculated for the biclusters then do so
-    if not c1.targetscan_3pUTR==1:
+    if not c1.targetscan_3pUTR:
         print 'Running TargetScan on Biclusters:'
         # If this has been run previously just load it up
         if not os.path.exists('output/targetscan_3pUTR.pkl'):
@@ -988,7 +991,7 @@ if not os.path.exists('output/c1_all.pkl'):
         print 'Done.\n'
 
         # TargetScan 3pUTR has been run on cMonkey run
-        c1.targetscan_3pUTR = 1
+        c1.targetscan_3pUTR = True
 
 
     #################################################################

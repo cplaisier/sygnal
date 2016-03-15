@@ -50,24 +50,32 @@ from sys import stdout
 # getBiclusterSeqs3pUTR(k)
 class cMonkeyWrapper:
     # Initialize the pssm
-    def __init__(self, sqliteDb, maxEValue='NA', meme_upstream=0, weeder_upstream=0, weeder_3pUTR=0, tfbs_db=0, pita_3pUTR=0, targetscan_3pUTR=0, geneConv=False):
+    def __init__(self, sqliteDb, maxEValue='NA',
+                 meme_upstream=False, weeder_upstream=False,
+                 weeder_3pUTR=False, tfbs_db=False,
+                 pita_3pUTR=False, targetscan_3pUTR=False,
+                 geneConv=False):
         # What has been run on this cMonkey run, legend = [0: not run, 1: run]
         de_novo_method_upstream = None
         de_novo_method_3pUTR = None
-        if meme_upstream==1 and weeder_upstream==1:
+        if meme_upstream and weeder_upstream:
             raise RuntimeError('You trained the same run on both MEME and Weeder! Are you stupid or something?')
-        elif meme_upstream==1:
+        elif meme_upstream:
             de_novo_method_upstream = 'meme'
-        elif weeder_upstream==1:
+        elif weeder_upstream:
             de_novo_method_upstream = 'weeder'
+
         self.meme_upstream = meme_upstream
         self.weeder_upstream = weeder_upstream
-        if weeder_3pUTR==1:
+
+        if weeder_3pUTR:
             de_novo_method_3pUTR = 'weeder'
+
         self.weeder_3pUTR = weeder_3pUTR
         self.tfbs_db = tfbs_db
         self.pita_3pUTR = pita_3pUTR
         self.targetscan_3pUTR = targetscan_3pUTR
+
         # Attach to the database
         con = lite.connect(sqliteDb)
         con.row_factory = lite.Row
@@ -149,11 +157,11 @@ class cMonkeyWrapper:
         pssms = []
         for bi in self.biclusters.keys():
             # Temporarily store the PSSMs
-            biOk = 0
+            biOk = False
             if maxNormResid=='NA' or float(self.biclusters[bi].getNormResidual())<=float(maxNormResid):
                 if maxSurv=='NA' or float(self.biclusters[bi].getSurvival()['"Survival"']['pValue'])<=float(maxSurv):
-                    biOk = 1
-            if biOk==1:
+                    biOk = True
+            if biOk:
                 tmpPssms = self.biclusters[bi].getPssmsUpstream()
                 for pssm in tmpPssms:
                     if de_novo_method=='NA' or de_novo_method==pssm.getMethod():
@@ -169,11 +177,11 @@ class cMonkeyWrapper:
         pssms = []
         for bi in self.biclusters.keys():
             # Temporarily store the PSSMs
-            biOk = 0
+            biOk = False
             if maxNormResid=='NA' or float(self.biclusters[bi].getNormResidual())<=float(maxNormResid):
                 if maxSurv=='NA' or float(self.biclusters[bi].getSurvival()['"Survival"']['pValue'])<=float(maxSurv):
-                    biOk = 1
-            if biOk==1:
+                    biOk = True
+            if biOk:
                 tmpPssms = self.biclusters[bi].getPssms3pUTR()
                 for pssm in tmpPssms:
                     # Only add it if it is less than an E-Value threshold
