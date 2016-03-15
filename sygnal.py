@@ -528,15 +528,12 @@ if not os.path.exists('output/c1_all.pkl'):
             # Run this using all cores available
             print 'Running Weeder...'
             cpus = cpu_count()
-            print 'There are', cpus,'CPUs avialable.'
+            print 'There are %d CPUs available.' % cpus
             pool = Pool(processes=cpus)
-            pool.map(runWeeder,[i for i in o1])
+            pool.map(runWeeder, [i for i in o1])
             pool.close()
             pool.join()
 
-            #runWeeder(40)
-            #for i in o1:
-            #    runWeeder(i)
             # Dump weeder results as a pickle file
             with open('output/weeder_upstream.pkl','wb') as pklFile:
                 cPickle.dump(deepcopy(weederResults), pklFile)
@@ -675,7 +672,7 @@ if not os.path.exists('output/c1_all.pkl'):
             pred_totalTargets.append(set(tmpList))
             del tmpDict
             del tmpList
-            print 'TFBS_DB has', len(predDict.keys()),'TFs.'
+            print 'TFBS_DB has %d TFs.' % len(predDict.keys())
 
             def clusterHypergeo_tfbs(biclustId, db = predDict, allGenes = pred_totalTargets[0]):
                 # k = overlap, N = potential target genes, n = miRNA targets, m = cluster genes
@@ -1157,83 +1154,63 @@ if not os.path.exists('output/c1_postProc.pkl'):
     pssms = c1.getPssmsUpstream()
     upstreamMatches = {}
 
-    if not os.path.exists('output/upstreamJasparTransfacComparison.pkl'):
-        # Load JASPAR CORE Vertebarata motifs
-        with open('motifs/jasparCoreVertebrata_redundant.pkl', 'rb') as pklFile:
-            jasparPssms = cPickle.load(pklFile)
-            for pssm1 in jasparPssms:
-                jasparPssms[pssm1].setMethod('meme')
+    motif_files = ['motifs/jasparCoreVertebrata_redundant.pkl',
+                   'motifs/transfac_2012.1_PSSMs_vertabrate.pkl',
+                   'motifs/uniprobePSSMsNonRedundant.pkl',
+                   'motifs/selexPSSMsNonRedundant.pkl']
+    comparison_pkl_path = 'output/upstreamJasparTransfacComparison.pkl'
+    comparison_csv_path = 'output/upstreamComparison_jaspar_transfac.csv'
 
-        # Load Transfac 2012.1 motifs
-        with open('motifs/transfac_2012.1_PSSMs_vertabrate.pkl', 'rb') as pklFile:
-            transfacPssms = cPickle.load(pklFile)
-            for pssm1 in transfacPssms:
-                transfacPssms[pssm1].setMethod('meme')
+    if not os.path.exists(comparison_pkl_path):
 
-        # Uniprobe motifs
-        with open('motifs/uniprobePSSMsNonRedundant.pkl', 'rb') as pklFile:
-            uniprobePssms = cPickle.load(pklFile)
-            for pssm1 in uniprobePssms:
-                uniprobePssms[pssm1].setMethod('meme')
-
-        # Uniprobe motifs
-        with open('motifs/selexPSSMsNonRedundant.pkl','rb') as pklFile:
-            selexPssms = cPickle.load(pklFile)
-            for pssm1 in selexPssms:
-                selexPssms[pssm1].setMethod('meme')
+        target_pssms_in = []
+        for motif_file in motif_files:
+            with open(motif_file, 'rb') as pklFile:
+                pssms = cPickle.load(pklFile)
+                for pssm in pssms.values():
+                    pssm.setMethod('meme')
+                target_pssms_in.append(pssms)
 
         # Write out results
-        with open('output/upstreamComparison_jaspar_transfac.csv','w') as outFile:
+        with open(comparison_csv_path, 'w') as outFile:
             outFile.write('Motif Name,Original E-Value,Consensus,JASPAR Motif,JASPAR Consensus,TomTom.pValue,TomTom.qValue,Probe In Bicluster,Bicluster Residual')
 
-            # Making MEME formatted files (makeFiles funciton in utils)
+            # Making MEME formatted files (makeFiles function in utils)
             print 'Making files...'
-            makeFiles(nucFreqs=c1.getNucFreqsUpstream(), queryPssms=pssms.values(), targetPssms=jasparPssms.values(), num=1)
-            makeFiles(nucFreqs=c1.getNucFreqsUpstream(), queryPssms=pssms.values(), targetPssms=transfacPssms.values(), num=2)
-            makeFiles(nucFreqs=c1.getNucFreqsUpstream(), queryPssms=pssms.values(), targetPssms=uniprobePssms.values(), num=3)
-            makeFiles(nucFreqs=c1.getNucFreqsUpstream(), queryPssms=pssms.values(), targetPssms=selexPssms.values(), num=4)
+            for i, target_pssms in enumerate(target_pssms_in):
+                makeFiles(nucFreqs=c1.getNucFreqsUpstream(), queryPssms=pssms.values(),
+                          targetPssms=target_pssms.values(), num=i)
 
             # Run TomTom 
             print 'Comparing Upstream motifs against databases...'
-            #runTomTom(1)
-            cpus = cpu_count()
-            pool = Pool(processes=cpus)
-            res1 = pool.map(runTomTom,[1,2,3,4])
+            pool = Pool(processes=cpu_count())
+            res1 = pool.map(runTomTom, [i for i in range(len(target_pssms_in))])
             pool.close()
             pool.join()
 
             print 'Reading in Tomtom run...'
-            with open('tmp/tomtom_out/tomtom1.out','r') as outputFile:
-                outputFile.readline() # get rid of header
-                outputLines = [ line.strip().split('\t') for line in outputFile.readlines() if float(line.split('\t')[5]) <= 0.05 ]
-
-            with open('tmp/tomtom_out/tomtom2.out','r') as outputFile:
-                outputFile.readline() # get rid of header
-                outputLines += [ line.strip().split('\t') for line in outputFile.readlines() if float(line.split('\t')[5]) <= 0.05 ]
-
-            with open('tmp/tomtom_out/tomtom3.out','r') as outputFile:
-                outputFile.readline() # get rid of header
-                outputLines += [ line.strip().split('\t') for line in outputFile.readlines() if float(line.split('\t')[5]) <= 0.05 ]
-
-            with open('tmp/tomtom_out/tomtom4.out','r') as outputFile:
-                outputFile.readline() # get rid of header
-                outputLines += [ line.strip().split('\t') for line in outputFile.readlines() if float(line.split('\t')[5]) <= 0.05 ]
+            output_lines = []
+            for i in range(len(target_pssms_in)):
+                with open('tmp/tomtom_out/tomtom%d.out' % i, 'r') as tomtom_outfile:
+                    tomtom_outfile.readline()  # skip header
+                    output_lines += [line.strip().split('\t') for line in tomtom_outfile
+                                    if float(line.split('\t')[5]) <= 0.05]
 
             # Now iterate through output and save data
-            print 'Now parsing output for '+str(len(outputLines))+' matches...'
-            for outputLine in outputLines:
-                if len(outputLine)==10 and float(outputLine[5])<=0.05:
+            print 'Now parsing output for %d matches...' % len(output_lines)
+            for outputLine in output_lines:
+                if len(outputLine) == 10 and float(outputLine[5]) <= 0.05:
                     tfName = outputLine[1].split('_')[0]
                     if not outputLine[0] in upstreamMatches:
                         upstreamMatches[outputLine[0]] = [{'factor':outputLine[1],'confidence':outputLine[5]}]
                     else:
                         upstreamMatches[outputLine[0]].append({'factor':outputLine[1],'confidence':outputLine[5]})
 
-        with open('output/upstreamJasparTransfacComparison.pkl','wb') as pklFile:
+        with open(comparison_pkl_path,'wb') as pklFile:
             cPickle.dump(upstreamMatches, pklFile)
     else:
         print 'Loading precached upstream matches...'
-        with open('output/upstreamJasparTransfacComparison.pkl','rb') as pklFile:
+        with open(comparison_pkl_path, 'rb') as pklFile:
             upstreamMatches = cPickle.load(pklFile)
 
     # Pump into pssms
