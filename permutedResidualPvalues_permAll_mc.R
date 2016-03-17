@@ -1,7 +1,25 @@
-loc1 = '/local/cMonkey/gbmTCGA/gbmTCGA.pita_2000/'
+#!/usr/bin/env Rscript
 
-library(WGCNA)
-library(multicore)
+suppressMessages(library(WGCNA))
+suppressMessages(library(multicore))
+suppressMessages(library(getopt))
+
+allowWGCNAThreads()
+
+# read command line arguments
+spec = matrix(c(
+  'basedir', 'b', 1, 'character',
+  'help', 'h', 0, 'logical'
+), byrow=TRUE, ncol=4)
+
+opt <- getopt(spec)
+
+if (is.null(opt$basedir) || !is.null(opt$help)) {
+  cat(getopt(spec, usage=TRUE))
+  q(status=1)
+}
+loc1 = opt$basedir
+
 
 residual <- function( rats ) {
   d.rows <- rowMeans( rats, na.rm=T )
@@ -95,7 +113,7 @@ getEigengene <- function (expr, rows, impute = TRUE, nPC = 1, align = "along ave
 }
 
 # Read in genes for each cluster
-d1 = read.csv(paste(loc1,'sygnal/output/cluster.members.genes.txt',sep=''),header=F)
+d1 = read.csv(paste(loc1,'sygnal/output/cluster.members.genes.txt',sep='/'),header=F)
 biclustMembership.gene = list()
 allGenes = c()
 for(j in 1:length(d1[,1])) {
@@ -103,7 +121,7 @@ for(j in 1:length(d1[,1])) {
 }
 
 # Read in genes for each cluster
-d1 = read.csv(paste(loc1,'sygnal/output/cluster.members.conditions.txt',sep=''),header=F)
+d1 = read.csv(paste(loc1,'sygnal/output/cluster.members.conditions.txt',sep='/'),header=F)
 biclustMembership.cond = list()
 allGenes = c()
 for(j in 1:length(d1[,1])) {
@@ -111,7 +129,7 @@ for(j in 1:length(d1[,1])) {
 }
 
 # Read in expression ratios file
-ratios <- read.delim( file=paste(loc1,'gbmTCGA_exprMat_medianFiltered_MAD2000.tsv',sep=''), sep="\t", as.is=T, header=T,row.names=1 )
+ratios <- read.delim(file=paste(loc1, 'gbmTCGA_exprMat_medianFiltered_MAD2000.tsv', sep='/'), sep="\t", as.is=T, header=T,row.names=1 )
 rownames(ratios) <- toupper(rownames(ratios))
 maxRowVar = mean( apply( ratios, 1, var, use="pair" ), na.rm=T )
 
@@ -154,5 +172,5 @@ m1 = do.call(rbind, mclapply(1:ks, function(k) {
     }))
 outNames = c('bicluster','bicluster','n.rows','n.cols','orig.resid','avg.perm.resid','perm.p','orig.resid.norm','avg.norm.perm.resid','norm.perm.p','pc1.var.exp','avg.pc1.var.exp','pc1.perm.p')
 colnames(m1) = outNames
-write.csv(m1,file=paste(loc1,'sygnal/output/residualPermutedPvalues_permAll.csv',sep=''))
+write.csv(m1,file=paste(loc1, 'sygnal/output/residualPermutedPvalues_permAll.csv',sep='/'))
 

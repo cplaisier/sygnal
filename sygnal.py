@@ -66,11 +66,20 @@ subsets = ['all'] # Might be nice to include subtypes
 subsetsPos = { 'all': [0,422] } # Might be nice to include subtypes
 randPssmsDir = 'randPSSMs'
 
+# Detenrmine the working directories, we pass this to the
+# external R scripts
+CURRENT_DIR = os.getcwd()
+# note that we need to paste in the '/' at the end because the R scripts
+# currently assume it
+BASE_DIR = os.path.dirname(os.getcwd()) + '/'
+OUTPUT_DIR = os.path.join(CURRENT_DIR, 'output')
+
 SYNONYM_PATH = '../synonymThesaurus.csv.gz'
 MIRNA_FASTA_PATH = 'miRNA/hsa.mature.fa'  # Need to update this to the latest database
 RATIOS_PATH = '../gbmTCGA_exprMat_medianFiltered.tsv'
 ALL_RATIOS_PATH = 'expression/gbmTCGA_exprMat.tsv'
 CMONKEY2_RUNDB = '../out/cmonkey_run.db'
+REPLICATION_DATASET_NAMES = ['French','REMBRANDT','GSE7696']
 
 #################################################################
 ## Functions                                                   ##
@@ -1161,15 +1170,18 @@ if not os.path.exists('output/c1_postProc.pkl'):
     comparison_pkl_path = 'output/upstreamJasparTransfacComparison.pkl'
     comparison_csv_path = 'output/upstreamComparison_jaspar_transfac.csv'
 
-    if not os.path.exists(comparison_pkl_path):
+    # WW:
+    # we need to read the motif file regardless whether pkl_path exists
+    # or we get an exception in the else part
+    target_pssms_in = []
+    for motif_file in motif_files:
+        with open(motif_file, 'rb') as pklFile:
+            pssms = cPickle.load(pklFile)
+            for pssm in pssms.values():
+                pssm.setMethod('meme')
+            target_pssms_in.append(pssms)
 
-        target_pssms_in = []
-        for motif_file in motif_files:
-            with open(motif_file, 'rb') as pklFile:
-                pssms = cPickle.load(pklFile)
-                for pssm in pssms.values():
-                    pssm.setMethod('meme')
-                target_pssms_in.append(pssms)
+    if not os.path.exists(comparison_pkl_path):
 
         # Write out results
         with open(comparison_csv_path, 'w') as outFile:
@@ -1430,7 +1442,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
 
         # Run this using all cores available
         cpus = cpu_count()
-        print 'There are', cpus,'CPUs avialable.'
+        print 'There are', cpus,'CPUs available.'
         print 'Running TOMTOM to compare PSSMs...'
         pool = Pool(processes=cpus)
         pool.map(runTomTom,range(len(pssms)))
@@ -1561,22 +1573,29 @@ if not os.path.exists('output/c1_postProc.pkl'):
         cmcFile.write('\n'.join(writeMe))
 
     def runReplication(repScript):
-        print '  Replication running for '+repScript+'...'
-        repProc = Popen('cd replication_'+repScript+'; R --no-save < replicationDatasetPermutation.R', shell=True, stdout=PIPE, stderr=PIPE)
-        output = repProc.communicate()[0].split('\n')
+        ## TODO:
+        ## these R scripts are external to the project and therefore
+        ## we can not generalize them safely. The script has a "loc1" variable which
+        ## hardcodes the output path, we need to make both
+        ## What actually needs to be done is to move the script into this project and
+        ## make it configurable
+        print '  Replication running for %s...' % repScript
+        ret = subprocess.check_call('cd replication_%s && Rscript replicationDatasetPermutation.R' % repScript,
+                                    stderr=subprocess.STDOUT, shell=True)
+        if ret == 1:
+            raise Exception('could not run replication - check dependencies')
 
     # Run replication on all datasets
-    runEm = []
-    for i in ['French','REMBRANDT','GSE7696']:
-        if not os.path.exists('output/replicationPvalues_'+i+'.csv'):
-            runEm.append(i)
-    if len(runEm)>0:
+    run_sets = [name for name in REPLICATION_DATASET_NAMES
+                if not os.path.exists('output/replicationPvalues_%s.csv' % name)]
+
+    if len(run_sets) > 0:
         print 'Run replication..'
         # Run this using all cores available
         cpus = cpu_count()
         print 'There are', cpus,'CPUs avialable.'
         pool = Pool(processes=cpus)
-        pool.map(runReplication,runEm)
+        pool.map(runReplication, run_sets)
         pool.close()
         pool.join()
 
@@ -1629,8 +1648,13 @@ if not os.path.exists('output/c1_postProc.pkl'):
     ###########################################################################
     if not os.path.exists('output/residualPermutedPvalues_permAll.csv'):
         print 'Calculating FPC permuted p-values...'
-        enrichProc = Popen("R --no-save < permutedResidualPvalues_permAll_mc.R", shell=True, stdout=PIPE, stderr=PIPE)
-        output = enrichProc.communicate()[0]
+        ret = subprocess.check_call(['./permutedResidualPvalues_permAll_mc.R',
+                                     '-b', '..'],
+                                    stderr=subprocess.STDOUT)
+        if ret == 1:
+            print "error in calling R script."
+            exit(1)
+
         print 'Done.\n'
 
     #################################################################
@@ -1652,15 +1676,23 @@ if not os.path.exists('output/c1_postProc.pkl'):
     #################################################################
     ## Run functional enrichment and GO term similarity            ##
     #################################################################
+    # Note that these are external to the project and have hard-coded paths !!!
     if not os.path.exists('output/biclusterEnrichment_GOBP.csv'):
         print 'Run functional enrichment...'
-        enrichProc = Popen("cd funcEnrichment; R --no-save < enrichment.R", shell=True, stdout=PIPE, stderr=PIPE)
-        output = enrichProc.communicate()[0]
+        ret = subprocess.check_call("cd funcEnrichment && Rscript enrichment.R -o %s" % OUTPUT_DIR,
+                                    stderr=subprocess.STDOUT, shell=True)
+        if ret == 1:
+            raise Exception('could not run functional enrichment')
+
         print 'Done.\n'
+
     if not os.path.exists('output/jiangConrath_hallmarks.csv'):
         print 'Run semantic similarity...'
-        enrichProc = Popen("cd funcEnrichment; R --no-save < goSimHallmarksOfCancer.R", shell=True, stdout=PIPE, stderr=PIPE)
-        output = enrichProc.communicate()[0]
+        ret = subprocess.check_call("cd funcEnrichment && Rscript goSimHallmarksOfCancer.R -o %s" % OUTPUT_DIR,
+                                    stderr=subprocess.STDOUT, shell=True)
+        if ret == 1:
+            raise Exception('could not run semantic similarity')
+
         print 'Done.\n'
 
     #################################################################
@@ -1710,9 +1742,13 @@ else:
 #################################################################
 if not os.path.exists('output/causality'):
     ## Run the runNEO.R script and do the causality analyses
+    ## TODO: WW: note the path is hardcoded in the scrip, change that
     print '  Network edge orienting (NEO)...'
-    neoProc = Popen('cd NEO; R --no-save < runNEO.R', shell=True, stdout=PIPE, stderr=PIPE)
-    output = neoProc.communicate()[0].split('\n')
+    ret = subprocess.check_call("cd NEO && Rscript runNEO.R -b %s" % BASE_DIR,
+                                stderr=subprocess.STDOUT, shell=True)
+    if ret == 1:
+        raise Exception('could not run causality analyses')
+
 
 ## Pull together analysis into cohesive output
 causalSummary = []

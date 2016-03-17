@@ -1,5 +1,3 @@
-loc1 = '/local/cMonkey/gbmTCGA/gbmTCGA.pita_2000/'
-
 # Read in the 
 d1 = read.csv('clpMerge_21nov.csv',header=T,row.names=1)
 
@@ -13,6 +11,21 @@ library(MASS) # standard, no need to install
 library(class)	# standard, no need to install
 library(cluster)	
 library(impute)# install it for imputing missing value
+
+suppressMessages(library(getopt))
+
+spec = matrix(c(
+  'basedir', 'b', 1, 'character',
+  'help', 'h', 0, 'logical'
+), byrow=TRUE, ncol=4)
+
+opt <- getopt(spec)
+
+if (is.null(opt$basedir) || !is.null(opt$help)) {
+  cat(getopt(spec, usage=TRUE))
+  q(status=1)
+}
+loc1 = opt$basedir
 
 #########################
 ## GBM TCGA Biclusters ##
@@ -81,14 +94,14 @@ sigRegFC = sapply(rownames(m1), function(x) { colnames(m1)[intersect(which(m1[x,
 #  1. Signficant differntial expression of regulator between wt and mutant (FC <= 0.8 or FC >= 1.25, and T-test p-value <= 0.05)
 source('neoDecember2015.R')
 registerDoParallel(12)
-dir.create(paste(loc1,'sygnal/output/causality',sep=''))
+dir.create(paste(loc1, 'sygnal/output/causality', sep=''))
 for(mut1 in names(sigRegFC)) {
     # Make a place to store out the data from the analysis
     mut2 = mut1
     if(nchar(mut2)>75) {
         mut2 = substr(mut2,1,75)
     }
-    dir.create(paste(loc1,'sygnal/output/causality/causal_',mut2,sep=''))
+    dir.create(paste(loc1, 'sygnal/output/causality/causal_', mut2, sep=''))
 
     # Change the names to be compatible with NEO
     print(paste('Starting ',mut1,'...',sep=''))
@@ -99,7 +112,7 @@ for(mut1 in names(sigRegFC)) {
         print(paste('  Starting ',mut1,' vs. ', reg1,' testing ', length(rownames(be1)), ' biclusters...', sep=''))
         sm1 = try(single.marker.analysis(t(dMut1),1,2,3:length(rownames(dMut1))),silent=TRUE)
         if (!(class(sm1)=='try-error')) {
-            write.csv(sm1[order(sm1[,6],decreasing=T),],paste(loc1,'sygnal/output/causality/causal_',mut2,'/sm.nonsilent_somatic.',mut2,'_',reg1,'.csv',sep=''))
+            write.csv(sm1[order(sm1[,6],decreasing=T),],paste(loc1, 'sygnal/output/causality/causal_', mut2, '/sm.nonsilent_somatic.',mut2,'_',reg1,'.csv',sep=''))
             print(paste('Finished ',reg1,'.',sep=''))
         } else {
             print(paste('  Error ',mut1,'.',sep=''))

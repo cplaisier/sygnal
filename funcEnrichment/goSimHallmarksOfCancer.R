@@ -1,6 +1,18 @@
-loc1='/local/cMonkey/gbmTCGA/gbmTCGA.pita_2000/sygnal/output/'
+suppressMessages(library(GOSim))
+suppressMessages(library(getopt))
 
-library(GOSim)
+spec = matrix(c(
+  'outdir', 'o', 1, 'character',
+  'help', 'h', 0, 'logical'
+), byrow=TRUE, ncol=4)
+
+opt <- getopt(spec)
+
+if (is.null(opt$outdir) || !is.null(opt$help)) {
+  cat(getopt(spec, usage=TRUE))
+  q(status=1)
+}
+loc1 = opt$outdir
 
 l1 = list()
 l1$SelfSufficiencyInGrowthSignals = c('GO:0009967','GO:0030307','GO:0008284','GO:0045787','GO:0007165')
@@ -17,7 +29,7 @@ l1$EvadingImmuneDetection = c('GO:0002837','GO:0002418','GO:0002367','GO:0050776
 d0 = c('GO:0009887','GO:0009605','GO:0048870','GO:0050896','GO:0007202','GO:0009611','GO:0006928','GO:0006950','GO:0048513','GO:0007166','GO:0014070')
 d0 = c('GO:0007155','GO:0001568','GO:0001525','GO:0048514')
 
-d1 = read.csv(paste(loc1,'biclusterEnrichment_GOBP.csv',sep=''),header=T,row.names=1)
+d1 = read.csv(paste(loc1, 'biclusterEnrichment_GOBP.csv', sep='/'),header=T,row.names=1)
 l2 = list()
 for(cluster in rownames(d1)) {
     l2[[cluster]] = strsplit(as.character(d1[cluster,2]),';')[[1]]
@@ -33,5 +45,5 @@ for(cluster in names(l2)) {
     }
 }
 
-write.csv(hallmarks,paste(loc1,'jiangConrath_hallmarks.csv',sep=''))
+write.csv(hallmarks,paste(loc1, 'jiangConrath_hallmarks.csv', sep='/'))
 

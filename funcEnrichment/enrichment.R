@@ -1,11 +1,23 @@
-library(topGO)
+suppressMessages(library(topGO))
 # Read in GO mappings to affymetrix probe ids
-library('org.Hs.eg.db')
+suppressMessages(library('org.Hs.eg.db'))
+suppressMessages(library(getopt))
 
-loc1 = '/local/cMonkey/gbmTCGA/gbmTCGA.pita_2000/sygnal/output/'
+spec = matrix(c(
+  'outdir', 'o', 1, 'character',
+  'help', 'h', 0, 'logical'
+), byrow=TRUE, ncol=4)
+
+opt <- getopt(spec)
+
+if (is.null(opt$outdir) || !is.null(opt$help)) {
+  cat(getopt(spec, usage=TRUE))
+  q(status=1)
+}
+loc1 = opt$outdir
 
 # Automated for all clusters
-d1 = read.csv(paste(loc1,'cluster.members.genes.txt',sep=''),header=F)
+d1 = read.csv(paste(loc1, 'cluster.members.genes.txt', sep='/'), header=F)
 biclustMembership = list()
 for(j in 1:length(d1[,1])) {
     biclustMembership[[j]] = strsplit(as.character(d1[j,]),split=' ')[[1]][-1]
@@ -31,5 +43,5 @@ for( biclust in (1:length(biclustMembership)) ) {
     m2.BP[biclust,2] = paste(names(which(p.adjust(r1.BP@score,method='BH')<=0.05)),collapse=';')
 }
 
-write.csv(m2.BP,paste(loc1,'biclusterEnrichment_GOBP.csv',sep='')) 
+write.csv(m2.BP,paste(loc1, 'biclusterEnrichment_GOBP.csv', sep='/')) 
 
