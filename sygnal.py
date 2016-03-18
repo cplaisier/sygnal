@@ -28,7 +28,7 @@ from shutil import rmtree
 from copy import deepcopy
 
 import rpy2.robjects as robj
-from rpy2.robjects import FloatVector, IntVector
+from rpy2.robjects import FloatVector, IntVector, StrVector
 from rpy2 import rinterface
 
 # Custom offYerBack libraries
@@ -41,6 +41,17 @@ from utils import *
 from sys import stdout, exit
 #from weeder import *
 import gzip
+
+
+#################################################################
+## rpy2 integration                                            ##
+#################################################################
+
+def make_rint_vector(a):
+    return IntVector(map(lambda i: rinterface.NA_Integer if i == 'NA' else int(i), a))
+
+def make_rfloat_vector(a):
+    return FloatVector(map(float, a))
 
 
 #################################################################
@@ -267,16 +278,11 @@ def correlation(a1, a2):
     Input: Two arrays of float or integers.
     Returns: Corrleation coefficient and p-value.
     """
-    # input parameters a1 and a2 are strings, convert to numbers
-    a1 = map(float, a1)
-    a2 = map(lambda s: rinterface.NA_Integer if s == 'NA' else int(s), a2)
-
     cor_test = robj.r['cor.test']
-    result = cor_test(FloatVector(a1), IntVector(a2))
+    result = cor_test(make_rfloat_vector(a1), make_rint_vector(a2))
     res = dict(zip(result.names, list(result)))
-    rho = res['estimate'][0]
-    pval = res['p.value'][0]
-    return [rho, pval]
+    return res['estimate'][0], res['p.value'][0]
+
 
 # Compute survival p-value from R
 def survival(survival, dead, pc1, age):
@@ -285,30 +291,17 @@ def survival(survival, dead, pc1, age):
     Input: Four arrays of float or integers.
     Returns:
     """
-    # Fire up R
-    rProc = Popen('R --no-save --slave', shell=True, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    runMe = []
-    # Make the data into an R matrix
-    runMe.append('library(survival)')
-    runMe.append('s1 = c('+','.join([str(i) for i in survival])+')')
-    runMe.append('dead1 = c('+','.join(['\''+str(i)+'\'' for i in dead])+')')
-    runMe.append('pc1 = c('+','.join([str(i) for i in pc1])+')')
-    runMe.append('age1 = c('+','.join([str(i) for i in age])+')')
-    runMe.append('scph1 = summary(coxph(Surv(s1,dead1==\'DEAD\') ~ pc1))')
-    runMe.append('scph2 = summary(coxph(Surv(s1,dead1==\'DEAD\') ~ pc1 + age1))')
-    runMe.append('scph1$coef[1,4]')
-    runMe.append('scph1$coef[1,5]')
-    runMe.append('scph2$coef[1,4]')
-    runMe.append('scph2$coef[1,5]')
-    runMe = '\n'.join(runMe)+'\n'
-    out = rProc.communicate(runMe)
-    # Process output
-    splitUp = out[0].strip().split('\n')
-    z1 = float((splitUp[0].split(' '))[1])
-    pValue1 = float((splitUp[1].split(' '))[1])
-    z2 = float((splitUp[2].split(' '))[1])
-    pValue2 = float((splitUp[3].split(' '))[1])
-    return [[z1, pValue1], [z2, pValue2]]
+    surv = robj.r("""
+library('survival')
+surv <- function(s, dead, pc1, age) {
+  scph1 = summary(coxph(Surv(s,dead == 'DEAD') ~ pc1))
+  scph2 = summary(coxph(Surv(s,dead == 'DEAD') ~ pc1 + age))
+  c(scph1$coef[1,4], scph1$coef[1,5],  scph2$coef[1,4], scph2$coef[1,5])
+}
+""")
+    res = surv(make_rint_vector(survival), StrVector(dead), make_rfloat_vector(pc1), make_rint_vector(age))
+    return [[res[0], res[1]], [res[2], res[3]]]
+
 
 # Compare miRNA names
 def compareMiRNANames(a, b):
