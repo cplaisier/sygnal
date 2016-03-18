@@ -28,8 +28,8 @@ from shutil import rmtree
 from copy import deepcopy
 
 import rpy2.robjects as robj
-from rpy2.robjects import FloatVector
-
+from rpy2.robjects import FloatVector, IntVector
+from rpy2 import rinterface
 
 # Custom offYerBack libraries
 from cMonkeyWrapper import cMonkeyWrapper
@@ -267,20 +267,16 @@ def correlation(a1, a2):
     Input: Two arrays of float or integers.
     Returns: Corrleation coefficient and p-value.
     """
-    # Fire up R
-    rProc = Popen('R --no-save --slave', shell=True, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    runMe = []
-    # Make the data into an R matrix
-    runMe.append('c1 = cor.test(c('+','.join([str(i) for i in a1])+'),c('+','.join([str(i) for i in a2])+'))')
-    runMe.append('c1$estimate')
-    runMe.append('c1$p.value')
-    runMe = '\n'.join(runMe)+'\n'
-    out = rProc.communicate(runMe)
-    # Process output
-    splitUp = out[0].strip().split('\n')
-    rho = float(splitUp[1])
-    pValue = float((splitUp[2].split(' '))[1])
-    return [rho, pValue]
+    # input parameters a1 and a2 are strings, convert to numbers
+    a1 = map(float, a1)
+    a2 = map(lambda s: rinterface.NA_Integer if s == 'NA' else int(s), a2)
+
+    cor_test = robj.r['cor.test']
+    result = cor_test(FloatVector(a1), IntVector(a2))
+    res = dict(zip(result.names, list(result)))
+    rho = res['estimate'][0]
+    pval = res['p.value'][0]
+    return [rho, pval]
 
 # Compute survival p-value from R
 def survival(survival, dead, pc1, age):
