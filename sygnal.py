@@ -279,7 +279,7 @@ def correlation(a1, a2):
     Returns: Corrleation coefficient and p-value.
     """
     cor_test = robj.r['cor.test']
-    result = cor_test(make_rfloat_vector(a1), make_rint_vector(a2))
+    result = cor_test(make_rfloat_vector(a1), make_rfloat_vector(a2))
     res = dict(zip(result.names, list(result)))
     return res['estimate'][0], res['p.value'][0]
 
