@@ -20,36 +20,15 @@
 import os
 import sqlite3 as lite
 import gzip
-from bicluster import bicluster
+from bicluster import Bicluster
 from subprocess import *
 from sys import stdout
 
-# A class designed to hold the information from a cMonkey RData object
-# to facilitate downstream analyses.
-#
-# Variables:
-# biclusters = dictionary
-# seqsUpstream = dictionary
-# seqs3pUTR = dictionary
-# nucFreqsUpstream = dictionary
-# nucFreqs3pUTR = dictionary
-#
-# Functions:
-# getBicluster(k)
-# getBiclusters()
-# getBiclusterNames()
-# getPssmsUpstream(maxScore='NA',maxNormResid='NA',maxEValue='NA',maxSurv='NA')
-# getPssms3pUTR(maxScore='NA',maxNormResid='NA',maxEValue='NA',maxSurv='NA')
-# getSeqsUpstream() - returns the upstream sequences
-# getSeqs3pUTR()
-# getNucFreqsUpstream()
-# getNucFreqs3pUTR()
-# getBiclusterRCode()
-# getPssmRCode(maxEValue)
-# getBiclusterSeqsUpstream(k)
-# getBiclusterSeqs3pUTR(k)
 class cMonkeyWrapper:
-    # Initialize the pssm
+    """
+    A class designed to hold the information from a cMonkey RData object
+    to facilitate downstream analyses."""
+
     def __init__(self, sqliteDb, maxEValue='NA',
                  meme_upstream=False, weeder_upstream=False,
                  weeder_3pUTR=False, tfbs_db=False,
@@ -93,7 +72,7 @@ class cMonkeyWrapper:
         print 'Found '+str(ks)+' clusters.'
         self.biclusters = {}
         for k in range(1,ks+1):
-            self.biclusters[k] = bicluster(k, self.maxIter, de_novo_method_upstream=de_novo_method_upstream, de_novo_method_3pUTR=de_novo_method_3pUTR, sqliteDb=sqliteDb)
+            self.biclusters[k] = Bicluster(k, self.maxIter, de_novo_method_upstream=de_novo_method_upstream, de_novo_method_3pUTR=de_novo_method_3pUTR, sqliteDb=sqliteDb)
             if k%10==0:
                 stdout.write(str(k))
             else:
@@ -152,7 +131,7 @@ class cMonkeyWrapper:
         return self.biclusters.keys()
 
     # Get all Upstream pssms
-    def getPssmsUpstream(self,maxNormResid='NA',maxEValue='NA',maxSurv='NA',de_novo_method='NA'):
+    def pssms_upstream(self, maxNormResid='NA', maxEValue='NA', maxSurv='NA', de_novo_method='NA'):
         pssmsNames = []
         pssms = []
         for bi in self.biclusters.keys():
@@ -162,7 +141,7 @@ class cMonkeyWrapper:
                 if maxSurv=='NA' or float(self.biclusters[bi].getSurvival()['"Survival"']['pValue'])<=float(maxSurv):
                     biOk = True
             if biOk:
-                tmpPssms = self.biclusters[bi].getPssmsUpstream()
+                tmpPssms = self.biclusters[bi].pssms_upstream
                 for pssm in tmpPssms:
                     if de_novo_method=='NA' or de_novo_method==pssm.getMethod():
                         # Only add it if it is less than an E-Value threshold
@@ -172,7 +151,7 @@ class cMonkeyWrapper:
         return dict(zip(pssmsNames,pssms))
 
     # Get all 3' UTR pssms
-    def getPssms3pUTR(self,maxNormResid='NA',maxEValue='NA',maxSurv='NA',de_novo_method='NA'):
+    def pssms_3putr(self, maxNormResid='NA', maxEValue='NA', maxSurv='NA', de_novo_method='NA'):
         pssmsNames = []
         pssms = []
         for bi in self.biclusters.keys():
@@ -182,7 +161,7 @@ class cMonkeyWrapper:
                 if maxSurv=='NA' or float(self.biclusters[bi].getSurvival()['"Survival"']['pValue'])<=float(maxSurv):
                     biOk = True
             if biOk:
-                tmpPssms = self.biclusters[bi].getPssms3pUTR()
+                tmpPssms = self.biclusters[bi].pssms_3putr
                 for pssm in tmpPssms:
                     # Only add it if it is less than an E-Value threshold
                     if de_novo_method=='NA' or de_novo_method==pssm.getMethod():
@@ -201,13 +180,13 @@ class cMonkeyWrapper:
 
     # getBiclusterSeqsUpstream() - returns the upstream sequences for a bicluster as a dictionary of {<gene_name>: <seqeunce>, ...}
     def getBiclusterSeqsUpstream(self, k):
-        genes = self.biclusters[k].getGenes()
+        genes = self.biclusters[k].genes
         seqs = dict(zip([gene for gene in genes if gene in self.seqsUpstream], [self.seqsUpstream[gene] for gene in genes if gene in self.seqsUpstream]))
         return seqs
 
     # getBiclusterSeqs3pUTR() - returns the 3' UTR sequences for a bicluster as a dictionary of {<gene_name>: <seqeunce>, ...}
     def getBiclusterSeqs3pUTR(self, k):
-        genes = self.biclusters[k].getGenes()
+        genes = self.biclusters[k].genes
         seqs = dict(zip([gene for gene in genes if gene in self.seqs3pUTR], [self.seqs3pUTR[gene] for gene in genes if gene in self.seqs3pUTR]))
         return seqs
 
