@@ -93,9 +93,9 @@ class Bicluster:
             matrix = [[i['a'], i['c'], i['g'], i['t']] for i in cur.fetchall()]
             genes = list(set([i[0] for i in sites]))
             if motif['seqtype']=='upstream':
-                self.pssms_upstream.append(pssm(pssmFileName=None, biclusterName=name, nsites=nsites, eValue=eValue, pssm=matrix, genes=genes, de_novo_method=de_novo_method))
+                self.pssms_upstream.append(pssm(name, nsites, eValue, matrix, genes, de_novo_method))
             else:
-                self.pssms_3putr.append(pssm(pssmFileName=None, biclusterName=name, nsites=nsites, eValue=eValue, pssm=matrix, genes=genes, de_novo_method=de_novo_method))
+                self.pssms_3putr.append(pssm(name, nsites, eValue, matrix, genes, de_novo_method))
         con.close()
 
     def num_genes(self):

@@ -98,35 +98,41 @@ REPLICATION_DATASET_NAMES = ['French','REMBRANDT','GSE7696']
 meme_args = None
 cluster_meme_runs = None
 
-def meme(num, seqFile=None, bgFile=None, nMotifs=1, minMotifWidth=6, maxMotifWidth=12, revComp=True, seed=None):
+def meme(num, seqfile, bgfile, nmotifs, min_motif_width, max_motif_width, revcomp, seed=None):
     """ Run meme and get the output into PSSMs"""
     global cluster_meme_runs
 
     # Arguments for meme
-    memeArgs = str(seqFile)+' -bfile '+ str(bgFile) +' -nostatus -text -time 600 -dna -maxsize 9999999 -evt 1e9 -mod zoops -minw ' + str(minMotifWidth) + ' -maxw ' + str(maxMotifWidth) + ' -nmotifs ' + str(nMotifs)
-    if revComp==True:
-        memeArgs += ' -revcomp'
-    if not seed==None:
-        memeArgs += ' -cons ' + str(seed)
-    print memeArgs
-    memeProc = Popen("meme " + memeArgs, shell=True,stdout=PIPE)
-    output = memeProc.communicate()[0].split('\n')
+    args = str(seqfile)+' -bfile '+ str(bgfile) +' -nostatus -text -time 600 -dna -maxsize 9999999 -evt 1e9 -mod zoops -minw ' + str(min_motif_width) + ' -maxw ' + str(max_motif_width) + ' -nmotifs ' + str(nmotifs)
+
+    if revcomp:
+        args += ' -revcomp'
+
+    if not seed is None:
+        args += ' -cons ' + str(seed)
+
+    print "MEME args: '%s'" % args
+    meme_proc = Popen("meme %s" % args, shell=True, stdout=PIPE)
+    output = meme_proc.communicate()[0].split('\n')
 
     PSSMs = []
-    # Now iterate through output and save data
+
     for i in range(len(output)):
         splitUp1 = output[i].strip().split(' ')
-        if splitUp1[0]=='Motif' and splitUp1[2]=='position-specific' and splitUp1[3]=='probability':
-            i += 2 # Skip the separator line, go to the summary line
+
+        if splitUp1[0] == 'Motif' and splitUp1[2] == 'position-specific' and splitUp1[3] == 'probability':
+            i += 2  # Skip the separator line, go to the summary line
             splitUp = output[i].strip().split(' ')
             width = int(splitUp[5])
             sites = splitUp[7]
             eValue = splitUp[9]
             matrix = []
+
             for j in range(width):
                 i += 1
                 matrix += [[float(let) for let in output[i].strip().split(' ') if let]]
-            PSSMs.append(pssm(biclusterName=str((seqFile.split('_')[1]).split('.')[0])+'_motif'+str(splitUp1[1])+'_meme',nsites=sites,eValue=eValue,pssm=matrix,genes=[], de_novo_method='meme'))
+            PSSMs.append(pssm(str((seqfile.split('_')[1]).split('.')[0])+'_motif'+str(splitUp1[1])+'_meme',
+                              sites, eValue, matrix, [], 'meme'))
     cluster_meme_runs[num] = PSSMs
 
 
@@ -136,36 +142,32 @@ def run_meme(runarg):
     global meme_args
 
     run_num, filepath = runarg
-    meme(run_num, seqFile=filepath,
-         bgFile=meme_args['bgFile'],
-         nMotifs=meme_args['nMotifs'],
-         minMotifWidth=meme_args['minMotifWidth'],
-         maxMotifWidth=meme_args['maxMotifWidth'],
-         revComp=meme_args['revComp'])
+    meme(run_num, filepath, meme_args['bgFile'], meme_args['nMotifs'], meme_args['minMotifWidth'],
+         meme_args['maxMotifWidth'], meme_args['revComp'])
 
 
 weeder_args = None
 weeder_results = None
 
-def weeder(bicluster, seqFile=None, bgFile='MM', size='small', enriched='T50', revComp=False):
+def weeder(bicluster, seqfile, bgfile, size, enriched, revcomp):
     """
     Run weeder and parse its output
     First weederTFBS -W 6 -e 1, then weederTFBS -W 8 -e 2, and finally adviser
     """
     global weeder_results
-    print seqFile
+    print "run weeder on '%s'" % seqfile
 
     # First run weederTFBS
-    weederArgs = str(seqFile)+' '+str(bgFile)+' '+str(size)+' '+str(enriched)
-    if revComp==True:
-        weederArgs += ' S'
-    errOut = open('tmp/weeder/stderr.out','w')
-    weederProc = Popen("weederlauncher " + weederArgs, shell=True,stdout=PIPE,stderr=errOut)
+    weeder_args = "%s %s %s %s" % (seqfile, bgfile, size, enriched)
+    if revcomp:
+        weeder_args += ' S'
+    errout = open('tmp/weeder/stderr.out','w')
+    weederProc = Popen("weederlauncher " + weeder_args, shell=True, stdout=PIPE, stderr=errout)
     output = weederProc.communicate()
 
     # Now parse output from weeder
     PSSMs = []
-    output = open(str(seqFile)+'.wee','r')
+    output = open(str(seqfile)+'.wee','r')
     outLines = [line for line in output.readlines() if line.strip()]
     hitBp = {}
     # Get top hit of 6bp look for "1)"
@@ -223,17 +225,20 @@ def weeder(bicluster, seqFile=None, bgFile='MM', size='small', enriched='T50', r
         if not outLine.find('Interesting motifs (highest-ranking)') == -1:
             break
     motifId = 1
-    biclusterId = str((seqFile.split('_')[1]).split('.')[0])
+    biclusterId = str((seqfile.split('_')[1]).split('.')[0])
     while 1:
         if len(outLines)<=1:
             break
-        if revComp==True:
+
+        if revcomp:
             name = outLines.pop(0).strip() # Get match
             name += '_'+outLines.pop(0).strip()
-        if revComp==False:
+        else:
             name = outLines.pop(0).strip() # Get match
+
         if not name.find('(not highest-ranking)') == -1:
             break
+
         # Get redundant motifs
         outLines.pop(0)
         redMotifs = [i for i in outLines.pop(0).strip().split(' ') if not i=='-']
@@ -257,39 +262,33 @@ def weeder(bicluster, seqFile=None, bgFile='MM', size='small', enriched='T50', r
                 colSum += int(i.strip())
             matrix += [[ float(nums[0])/float(colSum), float(nums[1])/float(colSum), float(nums[2])/float(colSum), float(nums[3])/float(colSum)]]
             col = outLines.pop(0)
-        PSSMs += [pssm(biclusterName=str(biclusterId)+'_motif'+str(motifId)+'_weeder',nsites=instances,eValue=hitBp[len(matrix)][1],pssm=matrix,genes=redMotifs, de_novo_method='weeder')]
+        PSSMs += [pssm(str(biclusterId)+'_motif'+str(motifId)+'_weeder',
+                       instances, hitBp[len(matrix)][1], matrix, redMotifs, 'weeder')]
         motifId += 1
     weeder_results[bicluster] = PSSMs
 
-
-# Wrapper function to run weeder using a multiprocessing pool
 
 def run_weeder(run_arg):
     global weeder_args
 
     run_num, filepath = run_arg
-    weeder(run_num, seqFile=filepath,
-           bgFile=weeder_args['bgFile'],
-           size=weeder_args['size'],
-           enriched=weeder_args['enriched'],
-           revComp=weeder_args['revComp'])
+    weeder(run_num, filepath, weeder_args['bgfile'], weeder_args['size'],
+           weeder_args['enriched'], weeder_args['revcomp'])
 
 
-# Run TomTom on the files
-def TomTom(num, distMeth='ed', qThresh='1', minOverlap=6):
-    # Arguments for tomtom
-    tomtomArgs = ' -dist '+str(distMeth)+' -o tmp/tomtom_out -text -thresh '+str(qThresh)+' -min-overlap '+str(minOverlap)+' -verbosity 1 tmp/query'+str(num)+'.tomtom tmp/target'+str(num)+'.tomtom'
-    print tomtomArgs
-    with open('tmp/stderr_'+str(num)+'.out','w') as errOut:
-        tomtomProc = Popen("tomtom" + tomtomArgs, shell=True,stdout=PIPE, stderr=errOut)
-        with open('tmp/tomtom_out/tomtom'+str(num)+'.out', 'w') as outputFile:
-            output = tomtomProc.communicate()[0]
-            outputFile.write(output)
+def tomtom(num, dist_meth='ed', q_thresh=1, min_overlap=6):
+    args = '-dist %s -o tmp/tomtom_out -text -thresh %d -min-overlap %d -verbosity 1 tmp/query%d.tomtom tmp/target%d.tomtom' % (dist_meth, q_thresh, min_overlap, num, num)
+    print args
+
+    with open('tmp/stderr_%d.out' % num,'w') as errout:
+        tomtom_proc = Popen("tomtom %s" % args, shell=True, stdout=PIPE, stderr=errout)
+        with open('tmp/tomtom_out/tomtom%d.out' % num, 'w') as outfile:
+            output = tomtom_proc.communicate()[0]
+            outfile.write(output)
 
 
-# Wrapper function to run TomTom using multiprocessing pool
 def run_tomtom(i):
-    TomTom(i, distMeth='ed', qThresh='1', minOverlap=6) #blic5
+    tomtom(i, 'ed', 1, 6)
 
 
 def phyper(q, m, n, k, lower_tail=False):
@@ -536,7 +535,7 @@ def compute_upstream_motifs_weeder(c1):
 
             # Parameters to use for running Weeder
             # Set to run Weeder on 'medium' setting which means 6bp, 8bp and 10bp motifs
-            weeder_args = mgr.dict( { 'bgFile': 'HS', 'size': 'small', 'enriched': 'T50', 'revComp': True } )
+            weeder_args = mgr.dict( { 'bgfile': 'HS', 'size': 'small', 'enriched': 'T50', 'revcomp': True } )
 
             print 'Running Weeder...'
             print 'There are %d CPUs available.' % cpu_count()
@@ -602,7 +601,7 @@ def compute_3pUTR_weeder(c1):
 
             # Parameters to use for running Weeder
             # Set to run Weeder on 'medium' setting which means 6bp, 8bp and 10bp motifs
-            weeder_args = mgr.dict( { 'bgFile': 'HS3P', 'size': 'small', 'enriched': 'T50', 'revComp': False } )
+            weeder_args = mgr.dict( { 'bgfile': 'HS3P', 'size': 'small', 'enriched': 'T50', 'revcomp': False } )
 
             print 'Running Weeder...'
             print 'There are %d CPUs available.' % cpu_count()

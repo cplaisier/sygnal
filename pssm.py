@@ -18,62 +18,24 @@
 #################################################################
 
 from math import log
+from numpy import array, float64, log10
 
-# Libraries for plotting
-#import numpy, corebio                     # http://numpy.scipy.org and http://code.google.com/p/corebio/
-from numpy import array, float64, log10   # http://numpy.scipy.org
-#from weblogolib import *                  # http://code.google.com/p/weblogo/
 
-# A class designed to hold a position specific scoring matrix
-# and be able to output this in many different formats
-#
-# Variables:
-# pssmName - name
-# eValue - the significance of the motif
-# nsites - number of genes that have the motif
-# genes - the genes that have the motif
-# pssmMatrix - a matrix of x by 4 [A, C, G, T]
-#
-# Functions:
-# readPssm(pssmFileName) - Reads in the pssm from the specified file, file name should be as absolute as necessary.
-# getMatrix() - returns the pssm matrix as is
-# getMemeFormatted() - returns the pssm matrix as a meme 3 formatted string
-# colConsensus() - gets the consensus letter for a column of the pssm matrix
-# getConsensusMotif() - repeatedly calls colConsensus to get the complete consensus motif
-# getName() - return the name of the pssm "bicluster#_motif#<optional _3pUTR>"
-# getNSites() - return the number of genes with the motif
-# getEValue() - return the significance of the motif for the bicluster
-# getGenes() - return the names of the genes that have the motif
-#
 class pssm:
+    """
+    A class designed to hold a position specific scoring matrix
+    and be able to output this in many different formats
+    """
     # Initialize the pssm
-    def __init__(self, pssmFileName=None, biclusterName=None, nsites=None, eValue=None, pssm=None, genes=None, de_novo_method='meme'):
+    def __init__(self, name, nsites, eValue, matrix, genes, de_novo_method='meme'):
         self.de_novo_method = de_novo_method
         self.matches = [] # each entry should be a dictionary of {'factor':<factor_name>,'confidence':<confidence_value>}
         self.permutedPValue = None
-        if not pssmFileName==None:
-            print biclusterName, pssmFileName, (((pssmFileName.split('.'))[0]).split('/'))[-1], de_novo_method
-            self.name = str(biclusterName)+'_'+(((pssmFileName.split('.'))[0]).split('/'))[-1]+'_'+de_novo_method
-            self.readPssm(pssmFileName)
-        else:
-            self.name = biclusterName
-            self.nsites = nsites
-            self.eValue = eValue
-            self.matrix = pssm
-            self.genes = genes
-
-    # Read in the PSSM matrix
-    def readPssm(self, pssmFileName):
-        pssmFile = open(pssmFileName,'r')
-        firstLine = pssmFile.readline().strip().split(',')
-        self.eValue = firstLine[0]
-        self.nsites = firstLine[1]
-        self.genes = []
-        for i in range(int(self.nsites)):
-            self.genes.append(pssmFile.readline().strip().split(',')[0])
-        self.matrix = []
-        self.matrix += [[float(i) for i in line.strip().split(',')] for line in pssmFile.readlines() if line]
-        pssmFile.close()
+        self.name = name
+        self.nsites = nsites
+        self.eValue = eValue
+        self.matrix = matrix
+        self.genes = genes
 
     # Returns the name of the PSSM
     def getName(self):
