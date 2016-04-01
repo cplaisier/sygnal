@@ -103,7 +103,7 @@ def meme(num, seqfile, bgfile, nmotifs, min_motif_width, max_motif_width, revcom
     global cluster_meme_runs
 
     # Arguments for meme
-    args = str(seqfile)+' -bfile '+ str(bgfile) +' -nostatus -text -time 600 -dna -maxsize 9999999 -evt 1e9 -mod zoops -minw ' + str(min_motif_width) + ' -maxw ' + str(max_motif_width) + ' -nmotifs ' + str(nmotifs)
+    args = '%s -bfile %s -nostatus -text -time 600 -dna -maxsize 9999999 -evt 1e9 -mod zoops -minw %d -maxw %d -nmotifs %d' % (seqfile, bgfile, min_motif_width, max_motif_width, nmotifs)
 
     if revcomp:
         args += ' -revcomp'
@@ -118,21 +118,21 @@ def meme(num, seqfile, bgfile, nmotifs, min_motif_width, max_motif_width, revcom
     PSSMs = []
 
     for i in range(len(output)):
-        splitUp1 = output[i].strip().split(' ')
+        desc_comps = output[i].strip().split(' ')
 
-        if splitUp1[0] == 'Motif' and splitUp1[2] == 'position-specific' and splitUp1[3] == 'probability':
+        if desc_comps[0] == 'Motif' and desc_comps[2] == 'position-specific' and desc_comps[3] == 'probability':
             i += 2  # Skip the separator line, go to the summary line
-            splitUp = output[i].strip().split(' ')
-            width = int(splitUp[5])
-            sites = splitUp[7]
-            eValue = splitUp[9]
+            summary_comps = output[i].strip().split(' ')
+            width = int(summary_comps[5])
+            sites = int(summary_comps[7])
+            evalue = float(summary_comps[9])
             matrix = []
 
             for j in range(width):
                 i += 1
                 matrix += [[float(let) for let in output[i].strip().split(' ') if let]]
-            PSSMs.append(pssm(str((seqfile.split('_')[1]).split('.')[0])+'_motif'+str(splitUp1[1])+'_meme',
-                              sites, eValue, matrix, [], 'meme'))
+            PSSMs.append(pssm('%s_motif%s_meme' % ((seqfile.split('_')[1]).split('.')[0], desc_comps[1]),
+                              sites, evalue, matrix, [], 'meme'))
     cluster_meme_runs[num] = PSSMs
 
 
@@ -142,8 +142,8 @@ def run_meme(runarg):
     global meme_args
 
     run_num, filepath = runarg
-    meme(run_num, filepath, meme_args['bgFile'], meme_args['nMotifs'], meme_args['minMotifWidth'],
-         meme_args['maxMotifWidth'], meme_args['revComp'])
+    meme(run_num, filepath, meme_args['bgfile'], meme_args['nmotifs'], meme_args['min_motif_width'],
+         meme_args['max_motif_width'], meme_args['revcomp'])
 
 
 weeder_args = None
@@ -224,8 +224,8 @@ def weeder(bicluster, seqfile, bgfile, size, enriched, revcomp):
         outLine = outLines.pop(0)
         if not outLine.find('Interesting motifs (highest-ranking)') == -1:
             break
-    motifId = 1
-    biclusterId = str((seqfile.split('_')[1]).split('.')[0])
+    motif_id = 1
+    bicluster_id = int(seqfile.split('_')[1].split('.')[0])
     while 1:
         if len(outLines)<=1:
             break
@@ -241,7 +241,7 @@ def weeder(bicluster, seqfile, bgfile, size, enriched, revcomp):
 
         # Get redundant motifs
         outLines.pop(0)
-        redMotifs = [i for i in outLines.pop(0).strip().split(' ') if not i=='-']
+        red_motifs = [i for i in outLines.pop(0).strip().split(' ') if not i=='-']
         outLines.pop(0)
         outLines.pop(0)
         line = outLines.pop(0)
@@ -256,15 +256,13 @@ def weeder(bicluster, seqfile, bgfile, size, enriched, revcomp):
         matrix = []
         col = outLines.pop(0)
         while col.find('======') == -1:
-            nums = [i for i in col.strip().split('\t')[1].split(' ') if i]
-            colSum = 0
-            for i in nums:
-                colSum += int(i.strip())
-            matrix += [[ float(nums[0])/float(colSum), float(nums[1])/float(colSum), float(nums[2])/float(colSum), float(nums[3])/float(colSum)]]
+            nums = [float(i.strip()) for i in col.strip().split('\t')[1].split(' ') if i]
+            colsum = sum(nums)
+            matrix += [[ nums[0] / colsum, nums[1] / colsum, nums[2] / colsum, nums[3] / colsum]]
             col = outLines.pop(0)
-        PSSMs += [pssm(str(biclusterId)+'_motif'+str(motifId)+'_weeder',
-                       instances, hitBp[len(matrix)][1], matrix, redMotifs, 'weeder')]
-        motifId += 1
+        PSSMs += [pssm('%d_motif%d_weeder' % (bicluster_id, motif_id),
+                       len(instances), hitBp[len(matrix)][1], matrix, red_motifs, 'weeder')]
+        motif_id += 1
     weeder_results[bicluster] = PSSMs
 
 
@@ -453,7 +451,7 @@ def compute_upstream_motifs_meme(c1):
 
             # First make fasta files for all biclusters
             print 'Making Files for MEME Upstream run...'
-            for b1 in c1.getBiclusters():
+            for b1 in c1.biclusters:
                 seqs = c1.getBiclusterSeqsUpstream(b1)
                 if len(seqs) > 0:
                     cluster_filename = 'tmp/meme/fasta/bicluster_%d.fasta' % b1
@@ -465,10 +463,10 @@ def compute_upstream_motifs_meme(c1):
             cluster_meme_runs = mgr.dict()
 
             # Parameters to use for running MEME
-            meme_args = mgr.dict( { 'bgFile': bgFile, 'nMotifs': nMotifs,
-                                    'minMotifWidth': motifWidth['upstream'][0],
-                                    'maxMotifWidth': motifWidth['upstream'][1],
-                                    'revComp': revComp['upstream'] } )
+            meme_args = mgr.dict( { 'bgfile': bgFile, 'nmotifs': nMotifs,
+                                    'min_motif_width': motifWidth['upstream'][0],
+                                    'max_motif_width': motifWidth['upstream'][1],
+                                    'revcomp': revComp['upstream'] } )
 
             print 'Running MEME on Upstream sequences...'
             print 'There are %d CPUs available.' % cpu_count()
@@ -499,135 +497,75 @@ def compute_upstream_motifs_meme(c1):
         c1.meme_upstream = True
 
 
-def compute_upstream_motifs_weeder(c1):
-    """
-    B. Upstream motifs (Weeder) ##
-    If Weeder hasn't been run on the biclusters upstream sequences then do so
+def __compute_motifs_weeder(resultpath, biclusters, add_result, bicluster_seqs, args_dict):
+    """Generic motif detection function with weeder
     """
     global weeder_args, weeder_results
 
+    if not os.path.exists(resultpath):
+        if os.path.exists('tmp'):
+            rmtree('tmp')
+        if not os.path.exists('tmp/weeder/fasta'):
+            os.makedirs('tmp/weeder/fasta')
+
+        # Run MEME on all biclusters
+        mgr = Manager()
+        run_args = []
+
+        # First make fasta files for all biclusters
+        for b1 in biclusters:
+            seqs = bicluster_seqs(b1)
+            if len(seqs) > 0:
+                cluster_filename = 'tmp/weeder/fasta/bicluster_%d.fasta' % b1
+                run_args.append((b1, cluster_filename))                    
+                with open(cluster_filename, 'w') as outfile:
+                    outfile.write('\n'.join(['>'+gene+'\n'+seqs[gene] for gene in seqs]))
+
+        # Where all the results will be stored
+        weeder_results = mgr.dict()
+
+        # Parameters to use for running Weeder
+        # Set to run Weeder on 'medium' setting which means 6bp, 8bp and 10bp motifs
+        weeder_args = mgr.dict(args_dict)
+
+        print 'Running Weeder...'
+        print 'There are %d CPUs available.' % cpu_count()
+        pool = Pool(processes=cpu_count())
+        pool.map(run_weeder, run_args)
+        pool.close()
+        pool.join()
+
+        # Dump weeder results as a pickle file
+        with open(resultpath,'wb') as outfile:
+            cPickle.dump(deepcopy(weeder_results), outfile)
+
+    else:
+        print 'Loading from precached object...'
+        with open(resultpath,'rb') as infile:
+            weeder_results = cPickle.load(infile)
+
+    print 'Storing output...'
+    for i, pssms in weeder_results.items():
+        for p in pssms:
+            p.setMethod('weeder')
+            add_result(i, p)
+
+def compute_upstream_motifs_weeder(c1):
     if not c1.weeder_upstream:
-        print 'Running Weeder on Upstreams:'
-        # If this has been run previously just load it up
-        if not os.path.exists('output/weeder_upstream.pkl'):
-            # Make needed directories
-            if os.path.exists('tmp'):
-                rmtree('tmp')
-            if not os.path.exists('tmp/weeder/fasta'):
-                os.makedirs('tmp/weeder/fasta')
-
-            # Run Weeder on all biclusters
-            mgr = Manager()
-            run_args = []
-
-            # First make fasta files for all biclusters
-            print 'Making Files for Upstream Weeder re-run...'
-            for b1 in c1.getBiclusters():
-                seqs = c1.getBiclusterSeqsUpstream(b1)
-                if len(seqs) > 0:
-                    cluster_filename = 'tmp/weeder/fasta/bicluster_%d.fasta' % b1
-                    run_args.append((b1, cluster_filename))
-                    with open(cluster_filename, 'w') as outfile:
-                        outfile.write('\n'.join(['>'+gene+'\n'+seqs[gene] for gene in seqs]))
-
-            # Where all the results will be stored
-            weeder_results = mgr.dict()
-
-            # Parameters to use for running Weeder
-            # Set to run Weeder on 'medium' setting which means 6bp, 8bp and 10bp motifs
-            weeder_args = mgr.dict( { 'bgfile': 'HS', 'size': 'small', 'enriched': 'T50', 'revcomp': True } )
-
-            print 'Running Weeder...'
-            print 'There are %d CPUs available.' % cpu_count()
-            pool = Pool(processes=cpu_count())
-            pool.map(run_weeder, run_args)
-            pool.close()
-            pool.join()
-
-            # Dump weeder results as a pickle file
-            with open('output/weeder_upstream.pkl','wb') as pklFile:
-                cPickle.dump(deepcopy(weeder_results), pklFile)
-        else:
-            print 'Loading from precached object...'
-            with open('output/weeder_upstream.pkl','rb') as pklFile:
-                weeder_results = cPickle.load(pklFile)
-
-        # Add PSSMs to cMonkey object
-        print 'Storing output...'
-        for i, pssms in weeder_results.items():
-            for pssm1 in pssms:
-                b1 = c1.getBicluster(i)
-                pssm1.setMethod('weeder')
-                b1.add_pssm_upstream(pssm1)
-        print 'Done with Weedering.\n'
-
-        # Weeder upstream has been run on cMonkey run
+        __compute_motifs_weeder('output/weeder_upstream.pkl',
+                                c1.biclusters,
+                                lambda bi, p: c1.getBicluster(bi).add_pssm_upstream(p),
+                                lambda bi: c1.getBiclusterSeqsUpstream(bi),
+                                { 'bgfile': 'HS', 'size': 'small', 'enriched': 'T50', 'revcomp': True })
         c1.weeder_upstream = True
 
-
 def compute_3pUTR_weeder(c1):
-    """
-    C. 3' UTR Weeder-miRvestigator (Weeder)
-    If Weeder hasn't been run on the biclusters 3' UTR sequences then do so
-    """
-    global weeder_results, weeder_args
-
     if not c1.weeder_3pUTR:
-        print 'Running Weeder on 3\' UTRs:'
-        # If this has been run previously just load it up
-        if not os.path.exists('output/weeder_3pUTR.pkl'):
-            # Make needed directories
-            if os.path.exists('tmp'):
-                rmtree('tmp')
-            if not os.path.exists('tmp/weeder/fasta'):
-                os.makedirs('tmp/weeder/fasta')
-
-            # Run MEME on all biclusters
-            mgr = Manager()
-            run_args = []
-
-            # First make fasta files for all biclusters
-            print 'Making Files for Upstream Weeder re-run...'
-            for b1 in c1.getBiclusters():
-                seqs = c1.getBiclusterSeqs3pUTR(b1)
-                if len(seqs) > 0:
-                    cluster_filename = 'tmp/weeder/fasta/bicluster_%d.fasta' % b1
-                    run_args.append((b1, cluster_filename))                    
-                    with open(cluster_filename, 'w') as outfile:
-                        outfile.write('\n'.join(['>'+gene+'\n'+seqs[gene] for gene in seqs]))
-
-            # Where all the results will be stored
-            weeder_results = mgr.dict()
-
-            # Parameters to use for running Weeder
-            # Set to run Weeder on 'medium' setting which means 6bp, 8bp and 10bp motifs
-            weeder_args = mgr.dict( { 'bgfile': 'HS3P', 'size': 'small', 'enriched': 'T50', 'revcomp': False } )
-
-            print 'Running Weeder...'
-            print 'There are %d CPUs available.' % cpu_count()
-            pool = Pool(processes=cpu_count())
-            pool.map(run_weeder, run_args)
-            pool.close()
-            pool.join()
-
-            # Dump weeder results as a pickle file
-            with open('output/weeder_3pUTR.pkl','wb') as pklFile:
-                cPickle.dump(deepcopy(weeder_results),pklFile)
-        else:
-            print 'Loading from precached object...'
-            with open('output/weeder_3pUTR.pkl','rb') as pklFile:
-                weeder_results = cPickle.load(pklFile)
-
-        # Add PSSMs to cMonkey object
-        print 'Storing output...'
-        for i, pssms in weeder_results.items():
-            for pssm1 in pssms:
-                b1 = c1.getBicluster(i)
-                pssm1.setMethod('weeder')
-                b1.add_pssm_3putr(pssm1)
-        print 'Done with 3\'UTR Weedering.\n'
-
-        # Weeder 3pUTR has been run on cMonkey run
+        __compute_motifs_weeder('output/weeder_3pUTR.pkl',
+                                c1.biclusters,
+                                lambda bi, p: c1.getBicluster(bi).add_pssm_3putr(p),
+                                lambda bi: c1.getBiclusterSeqs3pUTR(bi),
+                                { 'bgfile': 'HS3P', 'size': 'small', 'enriched': 'T50', 'revcomp': False })
         c1.weeder_3pUTR = True
 
 
@@ -635,45 +573,47 @@ predDict = None
 pred_totalTargets = None
 biclusters = None
 
-def clusterHypergeo_tfbs(biclustId):
+def cluster_hypergeo(bicluster_id):
     """concurrent computation
     k = overlap, N = potential target genes, n = miRNA targets, m = cluster genes
     Take gene list and compute overlap with each miRNA
     """
     global predDict, pred_totalTargets, biclusters
     db = predDict
-    allGenes = pred_totalTargets[0]
+    all_genes = pred_totalTargets[0]
 
-    genes = allGenes.intersection(biclusters[biclustId].genes)
-    writeMe = []
-    keys1 = db.keys()
+    genes = all_genes.intersection(biclusters[bicluster_id].genes)
     m1s = []
     q = []
     m = []
     n = []
     k = []
-    for m1 in keys1:
+    for m1, m1_genes in db.items():
         m1s.append(m1)
-        miRNAGenes = allGenes.intersection(db[m1])
+        miRNAGenes = all_genes.intersection(m1_genes)
         q.append(len(set(miRNAGenes).intersection(genes)))
         m.append(len(miRNAGenes))
-        n.append(len(allGenes)-len(miRNAGenes))
+        n.append(len(all_genes) - len(miRNAGenes))
         k.append(len(genes))
+
     results = phyper(q,m,n,k)
-    min_miRNA = []
+    min_mirna = []
     perc_targets = []
-    min_pValue = float(1)
-    for i in range(1,len(results)):
-        if float(results[i]) <= float(0.05)/float(674) and not q[i]==0 and float(q[i])/float(k[i]) >= 0.1:
-            if min_miRNA==[] or float(results[i]) < min_pValue:
-                min_miRNA = [i]
-                perc_targets = [float(q[i])/float(k[i])]
-                min_pValue = float(results[i])
-            elif float(results[i])==min_pValue:
-                min_miRNA.append(i)
-                perc_targets.append(float(q[i])/float(k[i]))
-    print 'Bicluster #', biclustId, ' '.join([m1s[miRNA] for miRNA in min_miRNA])
-    return [biclustId, ' '.join([m1s[miRNA] for miRNA in min_miRNA]), ' '.join([str(j) for j in perc_targets]), min_pValue]
+    min_pvalue = 1.0
+
+    for i in range(1, len(results)):
+        if float(results[i]) <= 0.05 / 674.0 and q[i] != 0 and float(q[i]) / float(k[i]) >= 0.1:
+            if min_mirna == [] or float(results[i]) < min_pvalue:
+                min_mirna = [i]
+                perc_targets = [ float(q[i]) / float(k[i]) ]
+                min_pvalue = float(results[i])
+            elif float(results[i]) == min_pvalue:
+                min_mirna.append(i)
+                perc_targets.append(float(q[i]) / float(k[i]))
+
+    print 'Bicluster #%d' % bicluster_id, ' '.join([m1s[miRNA] for miRNA in min_mirna])
+    return [bicluster_id, ' '.join([m1s[i] for i in min_mirna]),
+            ' '.join(map(str, perc_targets)), min_pvalue]
 
 
 def compute_tfbsdb_enrichment(c1):
@@ -692,7 +632,7 @@ def compute_tfbsdb_enrichment(c1):
 
             # Get a list of all genes in the biclusters
             print 'Get a list of all genes in run...'
-            tmpDict = c1.getBiclusters()
+            tmpDict = c1.biclusters
             genesInBiclusters = []
             for bicluster in tmpDict:
                 genes = tmpDict[bicluster].genes
@@ -746,7 +686,7 @@ def compute_tfbsdb_enrichment(c1):
             cpus = cpu_count()
             biclustIds = biclusters.keys()
             pool = Pool(processes=cpus)
-            res1 = pool.map(clusterHypergeo_tfbs, biclustIds)
+            res1 = pool.map(cluster_hypergeo, biclustIds)
             pool.close()
             pool.join()
 
@@ -770,46 +710,6 @@ def compute_tfbsdb_enrichment(c1):
         c1.tfbs_db = True
 
 
-def clusterHypergeo_pita(biclustId):
-    """concurrent computation
-    k = overlap, N = potential target genes, n = miRNA targets, m = cluster genes
-    Take gene list and compute overlap with each miRNA
-    """
-    global predDict, pred_totalTargets, biclusters
-    db = predDict
-    allGenes = pred_totalTargets[0]
-
-    genes = allGenes.intersection(biclusters[biclustId].genes)
-    keys1 = db.keys()
-    m1s = []
-    q = []
-    m = []
-    n = []
-    k = []
-    for m1 in keys1:
-        m1s.append(m1)
-        miRNAGenes = allGenes.intersection(db[m1])
-        q.append(len(set(miRNAGenes).intersection(genes)))
-        m.append(len(miRNAGenes))
-        n.append(len(allGenes)-len(miRNAGenes))
-        k.append(len(genes))
-    results = phyper(q,m,n,k)
-    min_miRNA = []
-    perc_targets = []
-    min_pValue = float(1)
-    for i in range(1,len(results)):
-        if float(results[i]) <= float(0.05)/float(674) and not q[i]==0 and float(q[i])/float(k[i]) >= 0.1:
-            if min_miRNA==[] or float(results[i]) < min_pValue:
-                min_miRNA = [i]
-                perc_targets = [float(q[i])/float(k[i])]
-                min_pValue = float(results[i])
-            elif float(results[i])==min_pValue:
-                min_miRNA.append(i)
-                perc_targets.append(float(q[i])/float(k[i]))
-    print 'Bicluster #', biclustId, ' '.join([m1s[miRNA] for miRNA in min_miRNA])
-    return [biclustId, ' '.join([m1s[miRNA] for miRNA in min_miRNA]), ' '.join([str(j) for j in perc_targets]), min_pValue]
-
-
 def compute_3pUTR_pita_set_enrichment(c1):
     """
     E. 3' UTR PITA
@@ -826,7 +726,7 @@ def compute_3pUTR_pita_set_enrichment(c1):
 
             # Get a list of all genes in the biclusters
             print 'Get a list of all genes in run...'
-            tmpDict = c1.getBiclusters()
+            tmpDict = c1.biclusters
             genesInBiclusters = []
             for bicluster in tmpDict:
                 genes = tmpDict[bicluster].genes
@@ -882,7 +782,7 @@ def compute_3pUTR_pita_set_enrichment(c1):
             cpus = cpu_count()
             biclustIds = biclusters.keys()
             pool = Pool(processes=cpus)
-            res1 = pool.map(clusterHypergeo_pita, biclustIds)
+            res1 = pool.map(cluster_hypergeo, biclustIds)
             pool.close()
             pool.join()
 
@@ -909,47 +809,6 @@ def compute_3pUTR_pita_set_enrichment(c1):
         c1.pita_3pUTR = True
 
 
-def clusterHypergeo_ts(biclustId):
-    """concurrent computation
-    k = overlap, N = potential target genes, n = miRNA targets, m = cluster genes
-    Take gene list and compute overlap with each miRNA
-    """
-    global predDict, pred_totalTargets, biclusters
-    db = predDict
-    allGenes = pred_totalTargets[0]
-
-    genes = allGenes.intersection(biclusters[biclustId].genes)
-    writeMe = []
-    keys1 = db.keys()
-    m1s = []
-    q = []
-    m = []
-    n = []
-    k = []
-    for m1 in keys1:
-        m1s.append(m1)
-        miRNAGenes = allGenes.intersection(db[m1])
-        q.append(len(set(miRNAGenes).intersection(genes)))
-        m.append(len(miRNAGenes))
-        n.append(len(allGenes)-len(miRNAGenes))
-        k.append(len(genes))
-    results = phyper(q,m,n,k)
-    min_miRNA = []
-    perc_targets = []
-    min_pValue = float(1)
-    for i in range(1,len(results)):
-        if float(results[i]) <= float(0.05)/float(674) and not q[i]==0 and float(q[i])/float(k[i]) >= 0.1:
-            if min_miRNA==[] or float(results[i]) < min_pValue:
-                min_miRNA = [i]
-                perc_targets = [float(q[i])/float(k[i])]
-                min_pValue = float(results[i])
-            elif float(results[i])==min_pValue:
-                min_miRNA.append(i)
-                perc_targets.append(float(q[i])/float(k[i]))
-    print 'Bicluster #', biclustId, ' '.join([m1s[miRNA] for miRNA in min_miRNA])
-    return [biclustId, ' '.join([m1s[miRNA] for miRNA in min_miRNA]), ' '.join([str(j) for j in perc_targets]), min_pValue]
-
-
 def compute_3pUTR_targetscan_set_enrichment(c1):
     """
     F. 3' UTR TargetScan
@@ -966,7 +825,7 @@ def compute_3pUTR_targetscan_set_enrichment(c1):
 
             # Get a list of all genes in the biclusters
             print 'Get a list of all genes in run...'
-            tmpDict = c1.getBiclusters()
+            tmpDict = c1.biclusters
             genesInBiclusters = []
             for bicluster in tmpDict:
                 genes = tmpDict[bicluster].genes
@@ -1021,7 +880,7 @@ def compute_3pUTR_targetscan_set_enrichment(c1):
             cpus = cpu_count()
             biclustIds = biclusters.keys()
             pool = Pool(processes=cpus)
-            res1 = pool.map(clusterHypergeo_ts,biclustIds)
+            res1 = pool.map(cluster_hypergeo, biclustIds)
             pool.close()
             pool.join()
 
@@ -1151,7 +1010,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
     print "dump cluster row members"
     with open('output/cluster.members.genes.txt','w') as cmgFile:
         writeMe = []
-        for b1 in c1.getBiclusters():
+        for b1 in c1.biclusters:
             writeMe.append(str(b1)+' '+' '.join(c1.getBicluster(b1).genes))
         cmgFile.write('\n'.join(writeMe))
 
@@ -1159,7 +1018,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
     print "dump cluster condition members"
     with open('output/cluster.members.conditions.txt','w') as cmcFile:
         writeMe = []
-        for b1 in c1.getBiclusters():
+        for b1 in c1.biclusters:
             writeMe.append(str(b1)+' '+' '.join(c1.getBicluster(b1).conditions))
         cmcFile.write('\n'.join(writeMe))
 
@@ -1214,7 +1073,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
         # Do post processing
         print 'Do post processing...'
         pool = Pool(processes=cpu_count())
-        res1 = pool.map(postProcess, c1.getBiclusters())
+        res1 = pool.map(postProcess, c1.biclusters)
         pool.close()
         pool.join()
         print 'Done.\n'
@@ -1384,8 +1243,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
     allNames = names
 
     # [rho, pValue] = correlation(a1,a2)
-    biclusters = c1.getBiclusters()
-    for b1 in biclusters:
+    for b1 in c1.biclusters:
         for pssm in biclusters[b1].pssms_upstream:
             factors = pssm.getExpandedMatches()
             compared = {}
@@ -1415,7 +1273,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
     #################################################################
     print 'Expand and correlate TFBS_DB TFs...'
     # For each bicluster
-    for bicluster in c1.getBiclusters():
+    for bicluster in c1.biclusters:
         b1 = c1.getBicluster(bicluster)
         # Get the tfbs_db attribute and for each TF get the list of expanded factors
         tfs = b1.attributes['tfbs_db']
@@ -1440,7 +1298,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
             b1.add_attribute('tfbs_db_expanded', expandedFactors)
 
     # [rho, pValue] = correlation(a1,a2)
-    for bicluster in c1.getBiclusters():
+    for bicluster in c1.biclusters:
         b1 = c1.getBicluster(bicluster)
         factors = b1.attributes['tfbs_db_expanded'] if 'tfbs_db_expanded' in b1.attributes else None
         compared = {}
@@ -1476,7 +1334,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
     # Get all first principal components for each bicluster
     fpcWrite = []
     conditions = c1.getBicluster(1).attributes['pc1'].keys()
-    for i in sorted(c1.getBiclusters().keys()):
+    for i in sorted(c1.biclusters.keys()):
         pc1 = c1.getBicluster(i).attributes['pc1']
         fpcWrite.append(str(i)+','+','.join([str(pc1[j]) for j in conditions]))
 
@@ -1573,7 +1431,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
     print 'Running miRvestigator on 3\' UTR Motifs:'
     if not os.path.exists('output/m2m.pkl'):
         print 'Computing miRNA matches...'
-        biclusters = c1.getBiclusters()
+        biclusters = c1.biclusters
         pssms = c1.pssms_3putr()
         seqs3pUTR = c1.getSeqs3pUTR().values()
         m2m = miRvestigator(pssms.values(),seqs3pUTR,seedModel=[6,7,8],minor=True,p5=True,p3=True,wobble=False,wobbleCut=0.25,baseDir='output',species='mmu')
@@ -1645,14 +1503,14 @@ if not os.path.exists('output/c1_postProc.pkl'):
     # Dump a file containing all the genes for each cluster
     with open('output/cluster.members.genes.txt','w') as cmgFile:
         writeMe = []
-        for b1 in c1.getBiclusters():
+        for b1 in c1.biclusters:
             writeMe.append(str(b1)+' '+' '.join(c1.getBicluster(b1).genes))
         cmgFile.write('\n'.join(writeMe))
 
     # Dump a file containing all the genes for each cluster
     with open('output/cluster.members.conditions.txt','w') as cmcFile:
         writeMe = []
-        for b1 in c1.getBiclusters():
+        for b1 in c1.biclusters:
             writeMe.append(str(b1)+' '+' '.join(c1.getBicluster(b1).conditions))
         cmcFile.write('\n'.join(writeMe))
 
@@ -1917,7 +1775,7 @@ for biclust in correspondentRegulators.keys():
 print 'Write postProcessedVFinal.csv...'
 postOut = []
 hallmarksOfCancer = c1.getBicluster(1).attributes['hallmarksOfCancer'].keys()
-for i in sorted(c1.getBiclusters().keys()):
+for i in sorted(c1.biclusters.keys()):
     writeMe = []
     b1 = c1.getBicluster(i)
     # Write file line by line
@@ -2221,4 +2079,3 @@ with open('output/'+str(postProcessedFile),'w') as postFinal:
     postFinal.write(','.join(header)+'\n'+'\n'.join([','.join(i) for i in postOut]))
 
 print 'Done.\n'
-

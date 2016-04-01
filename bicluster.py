@@ -86,7 +86,7 @@ class Bicluster:
             q1 = 'SELECT row_names.name, motif_annotations.position, motif_annotations.reverse, motif_annotations.pvalue FROM motif_annotations, row_names WHERE motif_annotations.motif_info_id='+str(motif['rowid'])+' and motif_annotations.gene_num=row_names.order_num'
             cur.execute(q1)
             sites = [[str(i['name']), i['position'], i['reverse'], i['pvalue']] for i in cur.fetchall()]
-            nsites = sites
+            nsites = len(sites)
             eValue = motif['evalue']
             q1 = 'SELECT a, c, g, t FROM motif_pssm_rows WHERE motif_info_id='+str(motif['rowid']) #+' and iteration='+str(self.maxIter)
             cur.execute(q1)

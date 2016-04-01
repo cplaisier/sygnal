@@ -119,12 +119,8 @@ class cMonkeyWrapper:
         print '\nDone loading.\n'
 
     # Return a particular bicluster
-    def getBicluster(self,k):
+    def getBicluster(self, k):
         return self.biclusters[k]
-
-    # Return a dictionary of all biclusters
-    def getBiclusters(self):
-        return self.biclusters
 
     # Return a list of bicluster names
     def getBiclusterNames(self):
