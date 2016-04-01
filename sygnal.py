@@ -616,6 +616,46 @@ def cluster_hypergeo(bicluster_id):
             ' '.join(map(str, perc_targets)), min_pvalue]
 
 
+def __bicluster_genes(c1):
+    result = set()
+    for key, bicluster in c1.biclusters.items():
+        for gene in bicluster.genes:
+            result.add(gene)
+    return result
+
+
+def __read_predictions(inpath, destpath, genesInBiclusters, manager):
+    if not os.path.exists(destpath):
+        print 'loading predictions...'
+        tmp_set = set()
+        tmp_dict = {}
+        with gzip.open(inpath, 'r') as infile:
+            inLines = [i.strip().split(',') for i in infile.readlines() if i.strip()]
+
+        for line in inLines:
+            if line[1] in genesInBiclusters:
+                tmp_set.add(line[1])
+                if not line[0] in tmp_dict:
+                    tmp_dict[line[0]] = []
+                tmp_dict[line[0]].append(line[1])
+
+        with open(destpath,'wb') as pklFile:
+            cPickle.dump(tmp_dict, pklFile)
+            cPickle.dump(tmp_set, pklFile)
+
+    # Otherwise load the dumped pickle file if it exists
+    else:
+        print 'Loading pickled predictions...'
+        with open(destpath,'rb') as pklFile:
+            tmp_dict = cPickle.load(pklFile)
+            tmp_set = cPickle.load(pklFile)
+    
+    predDict = manager.dict(tmp_dict)
+    pred_totalTargets = manager.list()
+    pred_totalTargets.append(set(tmp_set))
+    return predDict, pred_totalTargets
+
+
 def compute_tfbsdb_enrichment(c1):
     """
     D. Upstream TFBS DB enrichment Analysis
@@ -627,54 +667,13 @@ def compute_tfbsdb_enrichment(c1):
         print 'Running TFBS_DB on Biclusters:'
         # If this has been run previously just load it up
         if not os.path.exists('output/tfbs_db.pkl'):
-            # Get ready for multiprocessor goodness
-            mgr = Manager()
-
-            # Get a list of all genes in the biclusters
             print 'Get a list of all genes in run...'
-            tmpDict = c1.biclusters
-            genesInBiclusters = []
-            for bicluster in tmpDict:
-                genes = tmpDict[bicluster].genes
-                for gene in genes:
-                    if not gene in genesInBiclusters:
-                        genesInBiclusters.append(gene)
-            biclusters = mgr.dict(tmpDict)
-            del tmpDict
-
-            # Load up TFBS_DB TF ids
-            if not os.path.exists('TF/tfbs_db.pkl'):
-                print 'Loading TFBS_DB predictions...'
-                tmpList = []
-                tmpDict = {}
-                with gzip.open('TF/tfbsDb_5000_gs.csv.gz','r') as infile:
-                    inLines = [i.strip().split(',') for i in infile.readlines() if i.strip()]
-
-                for line in inLines:
-                    if line[1] in genesInBiclusters:
-                        if not line[1] in tmpList:
-                            tmpList.append(line[1])
-                        if not line[0] in tmpDict:
-                            tmpDict[line[0]] = []
-                        tmpDict[line[0]].append(line[1])
-
-                with open('TF/tfbs_db.pkl','wb') as pklFile:
-                    cPickle.dump(tmpDict, pklFile)
-                    cPickle.dump(tmpList, pklFile)
-
-            # Otherwise load the dumped pickle file if it exists
-            else:
-                print 'Loading pickled TFBS_DB predictions...'
-                with open('TF/tfbs_db.pkl','rb') as pklFile:
-                    tmpDict = cPickle.load(pklFile)
-                    tmpList = cPickle.load(pklFile)
-
-            # Setup for analysis
-            predDict = mgr.dict(tmpDict)
-            pred_totalTargets = mgr.list()
-            pred_totalTargets.append(set(tmpList))
-            del tmpDict
-            del tmpList
+            genesInBiclusters = __bicluster_genes(c1)
+            mgr = Manager()
+            biclusters = mgr.dict(c1.biclusters)
+            predDict, pred_totalTargets = __read_predictions('TF/tfbsDb_5000_gs.csv.gz',
+                                                             'TF/tfbs_db.pkl',
+                                                             genesInBiclusters, mgr)
             print 'TFBS_DB has %d TFs.' % len(predDict.keys())
 
             # Set allGenes as intersect of pred_totalTargets
@@ -683,10 +682,8 @@ def compute_tfbsdb_enrichment(c1):
 
             # Run this using all cores available
             print 'Running TFBS_DB enrichment analyses...'
-            cpus = cpu_count()
-            biclustIds = biclusters.keys()
-            pool = Pool(processes=cpus)
-            res1 = pool.map(cluster_hypergeo, biclustIds)
+            pool = Pool(processes=cpu_count())
+            res1 = pool.map(cluster_hypergeo, c1.biclusters.keys())
             pool.close()
             pool.join()
 
@@ -721,68 +718,23 @@ def compute_3pUTR_pita_set_enrichment(c1):
         print 'Running PITA on Biclusters:'
         # If this has been run previously just load it up
         if not os.path.exists('output/pita_3pUTR.pkl'):
-            # Get ready for multiprocessor goodness
-            mgr = Manager()
-
-            # Get a list of all genes in the biclusters
             print 'Get a list of all genes in run...'
-            tmpDict = c1.biclusters
-            genesInBiclusters = []
-            for bicluster in tmpDict:
-                genes = tmpDict[bicluster].genes
-                for gene in genes:
-                    if not gene in genesInBiclusters:
-                        genesInBiclusters.append(gene)
-            biclusters = mgr.dict(tmpDict)
-            del tmpDict
+            genesInBiclusters = __bicluster_genes(c1)
+            mgr = Manager()
+            biclusters = mgr.dict(c1.biclusters)
+            predDict, pred_totalTargets = __read_predictions('miRNA/pita_miRNA_sets_geneSymbol.csv.gz',
+                                                             'miRNA/pita.pkl',
+                                                             genesInBiclusters, mgr)
 
-            # Load up PITA miRNA ids
-            # If this is the first time then load from the RData file
-            if not os.path.exists('miRNA/pita.pkl'):
-                print 'Loading PITA predictions...'
-                tmpList = []
-                tmpDict = {}
-
-                with gzip.open('miRNA/pita_miRNA_sets_geneSymbol.csv.gz','r') as infile:
-                    inLines = [i.strip().split(',') for i in infile.readlines() if i.strip()]
-
-                for line in inLines:
-                    if line[1] in genesInBiclusters:
-                        if not line[1] in tmpList:
-                            tmpList.append(line[1])
-                        if not line[0] in tmpDict:
-                            tmpDict[line[0]] = []
-                        tmpDict[line[0]].append(line[1])
-
-                with open('miRNA/pita.pkl','wb') as pklFile:
-                    cPickle.dump(tmpDict, pklFile)
-                    cPickle.dump(tmpList, pklFile)
-
-            # Otherwise load the dumped pickle file if it exists
-            else:
-                print 'Loading pickled PITA predictions...'
-                with open('miRNA/pita.pkl','rb') as pklFile:
-                    tmpDict = cPickle.load(pklFile)
-                    tmpList = cPickle.load(pklFile)
-
-            # Setup for analysis
-            predDict = mgr.dict(tmpDict)
-            pred_totalTargets = mgr.list()
-            pred_totalTargets.append(set(tmpList))
-            del tmpDict
-            del tmpList
             print 'PITA has', len(predDict.keys()),'miRNAs.'
-
 
             # Set allGenes as intersect of pita_totalTargets and genesInBiclusters
             allGenes = pred_totalTargets[0]
 
             # Run this using all cores available
             print 'Running PITA enrichment analyses...'
-            cpus = cpu_count()
-            biclustIds = biclusters.keys()
-            pool = Pool(processes=cpus)
-            res1 = pool.map(cluster_hypergeo, biclustIds)
+            pool = Pool(processes=cpu_count())
+            res1 = pool.map(cluster_hypergeo, c1.biclusters.keys())
             pool.close()
             pool.join()
 
@@ -820,56 +772,16 @@ def compute_3pUTR_targetscan_set_enrichment(c1):
         print 'Running TargetScan on Biclusters:'
         # If this has been run previously just load it up
         if not os.path.exists('output/targetscan_3pUTR.pkl'):
-            # Get ready for multiprocessor goodness
-            mgr = Manager()
-
-            # Get a list of all genes in the biclusters
             print 'Get a list of all genes in run...'
-            tmpDict = c1.biclusters
-            genesInBiclusters = []
-            for bicluster in tmpDict:
-                genes = tmpDict[bicluster].genes
-                for gene in genes:
-                    if not gene in genesInBiclusters:
-                        genesInBiclusters.append(gene)
-            biclusters = mgr.dict(tmpDict)
-            del tmpDict
-
-            # Load up TargetScan miRNA ids
-            if not os.path.exists('miRNA/targetScan.pkl'):
-                print 'Loading TargetScan predictions...'
-                tmpList = []
-                tmpDict = {}
-                with gzip.open('miRNA/targetscan_miRNA_sets_geneSymbol.csv.gz','r') as infile:
-                    inLines = [i.strip().split(',') for i in infile.readlines() if i.strip()]
-
-                for line in inLines:
-                    if line[1] in genesInBiclusters:
-                        if not line[1] in tmpList:
-                            tmpList.append(line[1])
-                        if not line[0] in tmpDict:
-                            tmpDict[line[0]] = []
-                        tmpDict[line[0]].append(line[1])
-
-                with open('miRNA/targetScan.pkl','wb') as pklFile:
-                    cPickle.dump(tmpDict,pklFile)
-                    cPickle.dump(tmpList,pklFile)
-
-            # Otherwise load the dumped pickle file if it exists
-            else:
-                print 'Loading pickled TargetScan predictions...'
-                with open('miRNA/targetScan.pkl','rb') as pklFile:
-                    tmpDict = cPickle.load(pklFile)
-                    tmpList = cPickle.load(pklFile)
+            genesInBiclusters = __bicluster_genes(c1)
+            mgr = Manager()
+            biclusters = mgr.dict(c1.biclusters)
+            predDict, pred_totalTargets = __read_predictions('miRNA/targetscan_miRNA_sets_geneSymbol.csv.gz',
+                                                             'miRNA/targetScan.pkl',
+                                                             genesInBiclusters, mgr)
 
             # Setup for analysis
-            predDict = mgr.dict(tmpDict)
-            pred_totalTargets = mgr.list()
-            pred_totalTargets.append(set(tmpList))
-            del tmpDict
-            del tmpList
             print 'TargetScan has', len(predDict.keys()),'miRNAs.'
-
 
             # Set allGenes as intersect of pita_totalTargets and genesInBiclusters
             # allGenes = pred_totalTargets[0].intersection(genesInBiclusters)
@@ -877,10 +789,8 @@ def compute_3pUTR_targetscan_set_enrichment(c1):
 
             # Run this using all cores available
             print 'Running TargetScan enrichment analyses...'
-            cpus = cpu_count()
-            biclustIds = biclusters.keys()
-            pool = Pool(processes=cpus)
-            res1 = pool.map(cluster_hypergeo, biclustIds)
+            pool = Pool(processes=cpu_count())
+            res1 = pool.map(cluster_hypergeo, c1.biclusters.keys())
             pool.close()
             pool.join()
 
