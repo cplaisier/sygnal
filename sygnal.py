@@ -624,12 +624,12 @@ def __bicluster_genes(c1):
     return result
 
 
-def __read_predictions(inpath, destpath, genesInBiclusters, manager):
-    if not os.path.exists(destpath):
+def __read_predictions(pred_path, pkl_path, genesInBiclusters, manager):
+    if not os.path.exists(pkl_path):
         print 'loading predictions...'
         tmp_set = set()
         tmp_dict = {}
-        with gzip.open(inpath, 'r') as infile:
+        with gzip.open(pred_path, 'r') as infile:
             inLines = [i.strip().split(',') for i in infile.readlines() if i.strip()]
 
         for line in inLines:
@@ -639,14 +639,14 @@ def __read_predictions(inpath, destpath, genesInBiclusters, manager):
                     tmp_dict[line[0]] = []
                 tmp_dict[line[0]].append(line[1])
 
-        with open(destpath,'wb') as pklFile:
+        with open(pkl_path,'wb') as pklFile:
             cPickle.dump(tmp_dict, pklFile)
             cPickle.dump(tmp_set, pklFile)
 
     # Otherwise load the dumped pickle file if it exists
     else:
         print 'Loading pickled predictions...'
-        with open(destpath,'rb') as pklFile:
+        with open(pkl_path,'rb') as pklFile:
             tmp_dict = cPickle.load(pklFile)
             tmp_set = cPickle.load(pklFile)
     
@@ -656,164 +656,93 @@ def __read_predictions(inpath, destpath, genesInBiclusters, manager):
     return predDict, pred_totalTargets
 
 
-def compute_tfbsdb_enrichment(c1):
-    """
-    D. Upstream TFBS DB enrichment Analysis
-    If tfbs_db enrichment hasn't been calculated for the biclusters then do so
-    """
+def __compute_enrichment(c1, name,  pkl_path, pred_path, pred_pkl_path):
+    """General enrichment analysis function"""
     global predDict, pred_totalTargets, biclusters
 
+    print 'Running %s enrichment on Biclusters:' % name
+
+    if not os.path.exists(pkl_path):
+        print 'Get a list of all genes in run...'
+        genesInBiclusters = __bicluster_genes(c1)
+        mgr = Manager()
+        biclusters = mgr.dict(c1.biclusters)
+        predDict, pred_totalTargets = __read_predictions(pred_path, pred_pkl_path,
+                                                         genesInBiclusters, mgr)
+        print '%s prediction has %d TFs.' % (name, len(predDict))
+        allGenes = pred_totalTargets[0]
+
+        print 'Running %s enrichment analyses...' % name
+        pool = Pool(processes=cpu_count())
+        result = pool.map(cluster_hypergeo, c1.biclusters.keys())
+        pool.close()
+        pool.join()
+
+        with open(pkl_path, 'wb') as pklFile:
+            cPickle.dump(result, pklFile)
+    else:
+        print 'Loading precached analysis...'
+        with open(pkl_path, 'rb') as pklFile:
+            result = cPickle.load(pklFile)
+    return result
+
+def compute_tfbsdb_enrichment(c1):
+    """D. Upstream TFBS DB enrichment Analysis"""
     if not c1.tfbs_db:
-        print 'Running TFBS_DB on Biclusters:'
-        # If this has been run previously just load it up
-        if not os.path.exists('output/tfbs_db.pkl'):
-            print 'Get a list of all genes in run...'
-            genesInBiclusters = __bicluster_genes(c1)
-            mgr = Manager()
-            biclusters = mgr.dict(c1.biclusters)
-            predDict, pred_totalTargets = __read_predictions('TF/tfbsDb_5000_gs.csv.gz',
-                                                             'TF/tfbs_db.pkl',
-                                                             genesInBiclusters, mgr)
-            print 'TFBS_DB has %d TFs.' % len(predDict.keys())
+        res1 = __compute_enrichment(c1, 'TFBS_DB', 'output/tfbs_db.pkl',
+                                    'TF/tfbsDb_5000_gs.csv.gz',
+                                    'TF/tfbs_db.pkl')
 
-            # Set allGenes as intersect of pred_totalTargets
-            # allGenes = pred_totalTargets[0].intersection(genesInBiclusters)
-            allGenes = pred_totalTargets[0]
-
-            # Run this using all cores available
-            print 'Running TFBS_DB enrichment analyses...'
-            pool = Pool(processes=cpu_count())
-            res1 = pool.map(cluster_hypergeo, c1.biclusters.keys())
-            pool.close()
-            pool.join()
-
-            # Dump TFBS_DB enrichment results as a pickle file
-            with open('output/tfbs_db.pkl', 'wb') as pklFile:
-                cPickle.dump(res1,pklFile)
-        else:
-            print 'Loading precached analysis...'
-            with open('output/tfbs_db.pkl', 'rb') as pklFile:
-                res1 = cPickle.load(pklFile)
-
-        # Stuff into biclusters
         print 'Storing results...'
         for r1 in res1:
             # r1 = [biclusterId, tf(s), Percent Targets, P-Value]
             b1 = c1.getBicluster(r1[0])
-            b1.add_attribute('tfbs_db',{'tf':r1[1], 'percentTargets':r1[2], 'pValue':r1[3]})
+            b1.add_attribute('tfbs_db', {'tf':r1[1], 'percentTargets': r1[2],
+                                         'pValue':r1[3]})
         print 'Done.\n'
-
-        # TFBS_DB has been run on cMonkey run
         c1.tfbs_db = True
 
 
 def compute_3pUTR_pita_set_enrichment(c1):
-    """
-    E. 3' UTR PITA
-    If PITA enrichment hasn't been calculated for the biclusters then do so
-    """
-    global biclusters, predDict, pred_totalTargets
-
+    """E. 3' UTR PITA"""
     if not c1.pita_3pUTR:
-        print 'Running PITA on Biclusters:'
-        # If this has been run previously just load it up
-        if not os.path.exists('output/pita_3pUTR.pkl'):
-            print 'Get a list of all genes in run...'
-            genesInBiclusters = __bicluster_genes(c1)
-            mgr = Manager()
-            biclusters = mgr.dict(c1.biclusters)
-            predDict, pred_totalTargets = __read_predictions('miRNA/pita_miRNA_sets_geneSymbol.csv.gz',
-                                                             'miRNA/pita.pkl',
-                                                             genesInBiclusters, mgr)
+        res1 = __compute_enrichment(c1, 'PITA', 'output/pita_3pUTR.pkl',
+                                    'miRNA/pita_miRNA_sets_geneSymbol.csv.gz',
+                                    'miRNA/pita.pkl')
 
-            print 'PITA has', len(predDict.keys()),'miRNAs.'
-
-            # Set allGenes as intersect of pita_totalTargets and genesInBiclusters
-            allGenes = pred_totalTargets[0]
-
-            # Run this using all cores available
-            print 'Running PITA enrichment analyses...'
-            pool = Pool(processes=cpu_count())
-            res1 = pool.map(cluster_hypergeo, c1.biclusters.keys())
-            pool.close()
-            pool.join()
-
-            # Dump PITA enrichment results as a pickle file
-            with open('output/pita_3pUTR.pkl','wb') as pklFile:
-                cPickle.dump(res1, pklFile)
-        else:
-            print 'Loading precached analysis...'
-            with open('output/pita_3pUTR.pkl','rb') as pklFile:
-                res1 = cPickle.load(pklFile)
-
-        # Stuff into biclusters
         print 'Storing results...'
         for r1 in res1:
             # r1 = [biclusterId, miRNA(s), Percent Targets, P-Value]
             b1 = c1.getBicluster(r1[0])
             miRNA_mature_seq_ids = []
             for m1 in r1[1]:
-                miRNA_mature_seq_ids += miRNAInDict(m1.lower(),miRNAIDs)
-            b1.add_attribute('pita_3pUTR',{'miRNA':r1[1], 'percentTargets':r1[2], 'pValue':r1[3], 'mature_seq_ids':miRNA_mature_seq_ids })
+                miRNA_mature_seq_ids += miRNAInDict(m1.lower(), miRNAIDs)
+            b1.add_attribute('pita_3pUTR', {'miRNA': r1[1],
+                                            'percentTargets': r1[2],
+                                            'pValue': r1[3],
+                                            'mature_seq_ids': miRNA_mature_seq_ids})
         print 'Done.\n'
-
-        # PITA 3pUTR has been run on cMonkey run
         c1.pita_3pUTR = True
 
 
 def compute_3pUTR_targetscan_set_enrichment(c1):
-    """
-    F. 3' UTR TargetScan
-    If TargetScan enrichment hasn't been calculated for the biclusters then do so
-    """
-    global predDict, pred_totalTargets, biclusters
-
+    """F. 3' UTR TargetScan"""
     if not c1.targetscan_3pUTR:
-        print 'Running TargetScan on Biclusters:'
-        # If this has been run previously just load it up
-        if not os.path.exists('output/targetscan_3pUTR.pkl'):
-            print 'Get a list of all genes in run...'
-            genesInBiclusters = __bicluster_genes(c1)
-            mgr = Manager()
-            biclusters = mgr.dict(c1.biclusters)
-            predDict, pred_totalTargets = __read_predictions('miRNA/targetscan_miRNA_sets_geneSymbol.csv.gz',
-                                                             'miRNA/targetScan.pkl',
-                                                             genesInBiclusters, mgr)
+        res1 = __compute_enrichment(c1, 'TargetScan', 'output/targetscan_3pUTR.pkl',
+                                    'miRNA/targetscan_miRNA_sets_geneSymbol.csv.gz',
+                                    'miRNA/targetScan.pkl')
 
-            # Setup for analysis
-            print 'TargetScan has', len(predDict.keys()),'miRNAs.'
-
-            # Set allGenes as intersect of pita_totalTargets and genesInBiclusters
-            # allGenes = pred_totalTargets[0].intersection(genesInBiclusters)
-            allGenes = pred_totalTargets[0]
-
-            # Run this using all cores available
-            print 'Running TargetScan enrichment analyses...'
-            pool = Pool(processes=cpu_count())
-            res1 = pool.map(cluster_hypergeo, c1.biclusters.keys())
-            pool.close()
-            pool.join()
-
-            # Dump TargetScan enrichment results as a pickle file
-            with open('output/targetscan_3pUTR.pkl','wb') as pklFile:
-                cPickle.dump(res1,pklFile)
-        else:
-            print 'Loading precached analysis...'
-            with open('output/targetscan_3pUTR.pkl','rb') as pklFile:
-                res1 = cPickle.load(pklFile)
-
-        # Stuff into biclusters
         print 'Storing results...'
         for r1 in res1:
             # r1 = [biclusterId, miRNA(s), Percent Targets, P-Value]
             b1 = c1.getBicluster(r1[0])
             miRNA_mature_seq_ids = []
             for m1 in r1[1]:
-                miRNA_mature_seq_ids += miRNAInDict(m1.lower(),miRNAIDs)
-            b1.add_attribute('targetscan_3pUTR',{'miRNA':r1[1], 'percentTargets':r1[2], 'pValue':r1[3], 'mature_seq_ids':miRNA_mature_seq_ids })
+                miRNA_mature_seq_ids += miRNAInDict(m1.lower(), miRNAIDs)
+            b1.add_attribute('targetscan_3pUTR',
+                             {'miRNA': r1[1], 'percentTargets': r1[2],
+                              'pValue':r1[3], 'mature_seq_ids': miRNA_mature_seq_ids})
         print 'Done.\n'
-
-        # TargetScan 3pUTR has been run on cMonkey run
         c1.targetscan_3pUTR = True
 
 
@@ -1369,7 +1298,7 @@ if not os.path.exists('output/c1_postProc.pkl'):
             if not line[1]=='NA':
                 miRNA_mature_seq_ids = []
                 for i in line[1].split('_'):
-                    miRNA_mature_seq_ids += miRNAInDict(i.lower(),miRNAIDs)
+                    miRNA_mature_seq_ids += miRNAInDict(i.lower(), miRNAIDs)
                 miRNA_matches[line[0]] = {'miRNA':line[1],'model':line[2],'mature_seq_ids':miRNA_mature_seq_ids}
                 for m1 in miRNA_mature_seq_ids:
                     pssms[line[0]].addMatch(factor=m1, confidence=line[2])
