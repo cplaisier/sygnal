@@ -25,23 +25,24 @@ import re
 def miRNAInDict(miRNA, miRNAIDs):
     retMe = []
     for i in miRNAIDs.keys():
-        if compareMiRNANames(miRNA, i):
+        if __compare_mirna_names(miRNA, i):
             retMe.append(miRNAIDs[i])
     return retMe
 
-def compareMiRNANames(a, b):
+def __compare_mirna_names(a, b):
     if a==b:
-        return 1
-    if len(a)<len(b):
+        return True
+    if len(a) < len(b):
         re1 = re.compile(a+'[a-z]$')
         if re1.match(b):
-            return 1
+            return True
     else:
         re1 = re.compile(b+'[a-z]$')
         if re1.match(a):
-            return 1
-    return 0
+            return True
+    return False
 
+"""
 def uniquify(array1):
     inThere = []
     outThere = []
@@ -55,6 +56,7 @@ def uniquify(array1):
                 inThere.append(i[2]+i[0])
                 outThere.append(i)
     return outThere
+    """
 
 def randPSSMClustSize(clustSize):
     if clustSize <= 5:
@@ -84,6 +86,7 @@ def randPSSMClustSize(clustSize):
     else:
         return 65
 
+"""
 # Build a pssms dictionary for TOMTOM
 def compilePssms(clusterMemeRuns,maxEValue):
     pssmsNames = []
@@ -97,7 +100,8 @@ def compilePssms(clusterMemeRuns,maxEValue):
                 pssm.setName(str(i)+'.'+str(j))
                 pssms.append(deepcopy(pssm))
     return dict(zip(pssmsNames,pssms))
-
+"""
+"""
 # Returns a list of all p-values
 def getPValues(tomtomResults):
     pValues = []
@@ -106,7 +110,7 @@ def getPValues(tomtomResults):
     for i in allScores[o1]:
         pValues.append(allScores[o1][i]['pValue'])
     return pValues
-
+"""
 
 # Make the files for a TomTom run
 def makeFiles(nucFreqs, queryPssms, targetPssms, num, strands='+ -'):
