@@ -778,7 +778,11 @@ def compute_additional_info():
     return c1
 
 
+g_ratios = None
+g_phenotypes = None
+
 def post_process(bicluster):
+    global g_ratios
     def clean_name(name):
         comps = name.split('.')
         return '%s.%s.%s' % (comps[0], comps[1], comps[2])
@@ -794,26 +798,26 @@ def post_process(bicluster):
 
     # Get matrix of expression for genes
     genes = b1.genes
-    conditions = ratios[genes[0]].keys()
-    matrix = [[ratios[gene][condition] for condition in conditions] for gene in genes]
+    conditions = g_ratios[genes[0]].keys()
+    matrix = [[g_ratios[gene][condition] for condition in conditions] for gene in genes]
 
     # Get first principal component variance explained
     fpc = b1.attributes['pc1']
 
     # Corrleation with patient traits
     cleanNames = dict(zip([clean_name(i) for i in conditions], conditions))
-    cond2 = set(cleanNames.keys()).intersection(phenotypes['SURVIVAL'].keys())
+    cond2 = set(cleanNames.keys()).intersection(g_phenotypes['SURVIVAL'].keys())
     pc1_1 = [fpc[cleanNames[i]] for i in cond2]
 
     for phenotype in ['AGE', 'SEX.bi', 'chemo_therapy', 'radiation_therapy']:
-        p1_1 = [phenotypes[phenotype][i] for i in cond2]
+        p1_1 = [g_phenotypes[phenotype][i] for i in cond2]
         cor1 = correlation(pc1_1, p1_1)
         attributes[phenotype] = dict(zip(['rho', 'pValue'], cor1))
 
     # Association of bicluster expression with patient survival
-    surv = [phenotypes['SURVIVAL'][i] for i in cond2]
-    dead = [phenotypes['DEAD'][i] for i in cond2]
-    age = [phenotypes['AGE'][i] for i in cond2]
+    surv = [g_phenotypes['SURVIVAL'][i] for i in cond2]
+    dead = [g_phenotypes['DEAD'][i] for i in cond2]
+    age = [g_phenotypes['AGE'][i] for i in cond2]
     s1 = survival(surv, dead, pc1_1, age)
     attributes['Survival'] = dict(zip(['z', 'pValue'], s1[0]))
     attributes['Survival.AGE'] = dict(zip(['z', 'pValue'], s1[1]))
@@ -902,9 +906,12 @@ def __get_phenotype_info(phenotypes_path, c1):
     return phenotypes
 
 
-def __do_postprocess(postprocess_pkl_path, c1):
+def __do_postprocess(postprocess_pkl_path, c1, ratios, phenotypes):
+    global g_ratios, g_phenotypes
+
     if not os.path.exists(postprocess_pkl_path):
-        # Do post processing
+        g_ratios = ratios
+        g_phenotypes = phenotypes
         print 'Do post processing...'
         pool = Pool(processes=cpu_count())
         res1 = pool.map(post_process, c1.biclusters)
@@ -1512,7 +1519,7 @@ def perform_postprocessing(c1):
         __get_cluster_eigengenes(RATIOS_PATH, c1)
         __get_cluster_variance_explained(CLUSTER_VARIANCE_EXPLAINED_PATH, c1)
         phenotypes = __get_phenotype_info(PHENOTYPES_PATH, c1)
-        __do_postprocess(POSTPROCESS_PKL_PATH, c1)
+        __do_postprocess(POSTPROCESS_PKL_PATH, c1, ratios, phenotypes)
         __tomtom_upstream_motifs()
         tf_name2entrezid, tf_families = __expand_tf_factor_list()
         exp_data, all_names = __correlate_tfs_with_cluster_eigengenes()
