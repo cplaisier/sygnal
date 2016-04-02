@@ -118,14 +118,6 @@ class cMonkeyWrapper:
         con.close()
         print '\nDone loading.\n'
 
-    # Return a particular bicluster
-    def getBicluster(self, k):
-        return self.biclusters[k]
-
-    # Return a list of bicluster names
-    def getBiclusterNames(self):
-        return self.biclusters.keys()
-
     # Get all Upstream pssms
     def pssms_upstream(self, maxNormResid='NA', maxEValue='NA', maxSurv='NA', de_novo_method='NA'):
         pssmsNames = []

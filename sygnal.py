@@ -499,7 +499,7 @@ def compute_upstream_motifs_meme(c1):
         print 'Storing output...'
         for i, pssms in g_cluster_meme_runs.items():
             for pssm1 in pssms:
-                b1 = c1.getBicluster(i)
+                b1 = c1.biclusters[i]
                 pssm1.setMethod('meme')
                 b1.add_pssm_upstream(pssm1)
 
@@ -567,7 +567,7 @@ def compute_upstream_motifs_weeder(c1):
     if not c1.weeder_upstream:
         __compute_motifs_weeder('output/weeder_upstream.pkl',
                                 c1.biclusters,
-                                lambda bi, p: c1.getBicluster(bi).add_pssm_upstream(p),
+                                lambda bi, p: c1.biclusters[bi].add_pssm_upstream(p),
                                 lambda bi: c1.getBiclusterSeqsUpstream(bi),
                                 {'bgfile': 'HS', 'size': 'small', 'enriched': 'T50',
                                  'revcomp': True})
@@ -578,7 +578,7 @@ def compute_3pUTR_weeder(c1):
     if not c1.weeder_3pUTR:
         __compute_motifs_weeder('output/weeder_3pUTR.pkl',
                                 c1.biclusters,
-                                lambda bi, p: c1.getBicluster(bi).add_pssm_3putr(p),
+                                lambda bi, p: c1.biclusters[bi].add_pssm_3putr(p),
                                 lambda bi: c1.getBiclusterSeqs3pUTR(bi),
                                 {'bgfile': 'HS3P', 'size': 'small', 'enriched': 'T50',
                                  'revcomp': False})
@@ -708,7 +708,7 @@ def compute_tfbsdb_enrichment(c1):
         print 'Storing results...'
         for r1 in res1:
             # r1 = [biclusterId, tf(s), Percent Targets, P-Value]
-            b1 = c1.getBicluster(r1[0])
+            b1 = c1.biclusters[r1[0]]
             b1.add_attribute('tfbs_db', {'tf':r1[1], 'percentTargets': r1[2],
                                          'pValue':r1[3]})
         print 'Done.\n'
@@ -725,10 +725,10 @@ def compute_3pUTR_pita_set_enrichment(c1):
         print 'Storing results...'
         for r1 in res1:
             # r1 = [biclusterId, miRNA(s), Percent Targets, P-Value]
-            b1 = c1.getBicluster(r1[0])
+            b1 = c1.biclusters[r1[0]]
             miRNA_mature_seq_ids = []
             for m1 in r1[1]:
-                miRNA_mature_seq_ids += utils.miRNAInDict(m1.lower(), miRNAIDs)
+                miRNA_mature_seq_ids += utils.mirna_in_dict(m1.lower(), miRNAIDs)
             b1.add_attribute('pita_3pUTR', {'miRNA': r1[1],
                                             'percentTargets': r1[2],
                                             'pValue': r1[3],
@@ -747,10 +747,10 @@ def compute_3pUTR_targetscan_set_enrichment(c1):
         print 'Storing results...'
         for r1 in res1:
             # r1 = [biclusterId, miRNA(s), Percent Targets, P-Value]
-            b1 = c1.getBicluster(r1[0])
+            b1 = c1.biclusters[r1[0]]
             miRNA_mature_seq_ids = []
             for m1 in r1[1]:
-                miRNA_mature_seq_ids += utils.miRNAInDict(m1.lower(), miRNAIDs)
+                miRNA_mature_seq_ids += utils.mirna_in_dict(m1.lower(), miRNAIDs)
             b1.add_attribute('targetscan_3pUTR',
                              {'miRNA': r1[1], 'percentTargets': r1[2],
                               'pValue':r1[3], 'mature_seq_ids': miRNA_mature_seq_ids})
@@ -799,7 +799,7 @@ def post_process(bicluster):
 
     attributes = {}
     print ' Postprocessing cluster:', bicluster
-    b1 = c1.getBicluster(bicluster)
+    b1 = c1.biclusters[bicluster]
     attributes['k'] = bicluster
 
     # Add number of genes and conditions
@@ -847,12 +847,12 @@ def __read_ratios(path, c1):
     print "dump cluster row members"
     with open(CLUSTER_GENES_PATH, 'w') as outfile:
         for b1 in c1.biclusters:
-            outfile.write('%s %s\n' % (b1, ' '.join(c1.getBicluster(b1).genes))) 
+            outfile.write('%s %s\n' % (b1, ' '.join(c1.biclusters[b1].genes))) 
 
     print "dump cluster condition members"
     with open(CLUSTER_CONDS_PATH, 'w') as outfile:
         for b1 in c1.biclusters:
-            outfile.write('%s %s\n' % (b1, ' '.join(c1.getBicluster(b1).conditions)))
+            outfile.write('%s %s\n' % (b1, ' '.join(c1.biclusters[b1].conditions)))
     return ratios
 
 
@@ -877,7 +877,7 @@ def __get_cluster_eigengenes(ratios_path, c1):
         for line in infile:
             eigengene = line.strip().split(',')
             bicluster = int(eigengene.pop(0).strip('"'))
-            b1 = c1.getBicluster(bicluster)
+            b1 = c1.biclusters[bicluster]
             b1.add_attribute('pc1', dict(zip(patients, eigengene)))
 
 
@@ -888,7 +888,7 @@ def __get_cluster_variance_explained(variance_explained_path, c1):
         for line in infile:
             varExplained = line.strip().split(',')
             bicluster = int(varExplained.pop(0).strip('"'))
-            b1 = c1.getBicluster(bicluster)
+            b1 = c1.biclusters[bicluster]
             b1.add_attribute('pc1.var.exp', varExplained[0])
 
 
@@ -931,7 +931,7 @@ def __do_postprocess(postprocess_pkl_path, c1, ratios, phenotypes):
 
     # Put results in cMonkey object
     for entry in res1:
-        b1 = c1.getBicluster(entry['k'])
+        b1 = c1.biclusters[entry['k']]
         for attribute in entry:
             if not attribute == 'k':
                 b1.add_attribute(attribute, entry[attribute])
@@ -975,13 +975,11 @@ def __tomtom_upstream_motifs():
         with open(comparison_csv_path, 'w') as outFile:
             outFile.write('Motif Name,Original E-Value,Consensus,JASPAR Motif,JASPAR Consensus,TomTom.pValue,TomTom.qValue,Probe In Bicluster,Bicluster Residual')
 
-            # Making MEME formatted files (makeFiles function in utils)
+            # Making MEME formatted files (make_files function in utils)
             print 'Making files...'
             for i, target_pssms in enumerate(target_pssms_in):
-                utils.makeFiles(nucFreqs=c1.getNucFreqsUpstream(),
-                                queryPssms=pssms.values(),
-                                targetPssms=target_pssms.values(),
-                                num=i)
+                utils.make_files(c1.getNucFreqsUpstream(), pssms.values(),
+                                 target_pssms.values(), i)
 
             # Run TomTom 
             print 'Comparing Upstream motifs against databases...'
@@ -1126,7 +1124,7 @@ def __expand_and_correlate_tfbsdb_tfs(c1, tf_name2entrezid, tf_families, exp_dat
                                       all_names):
     print 'Expand and correlate TFBS_DB TFs...'
     for bicluster in c1.biclusters:
-        b1 = c1.getBicluster(bicluster)
+        b1 = c1.biclusters[bicluster]
         # Get the tfbs_db attribute and for each TF get the list of expanded factors
         tfs = b1.attributes['tfbs_db']
         expanded_factors = {}
@@ -1151,7 +1149,7 @@ def __expand_and_correlate_tfbsdb_tfs(c1, tf_name2entrezid, tf_families, exp_dat
 
     # [rho, pValue] = correlation(a1,a2)
     for bicluster in c1.biclusters:
-        b1 = c1.getBicluster(bicluster)
+        b1 = c1.biclusters[bicluster]
         factors = b1.attributes['tfbs_db_expanded'] if 'tfbs_db_expanded' in b1.attributes else None
         compared = {}
         for subset in SUBSETS:
@@ -1187,9 +1185,9 @@ def __write_first_principal_components(c1):
     print 'Write biclusterFirstPrincComponents.csv...'
     # Get all first principal components for each bicluster
     fpcWrite = []
-    conditions = c1.getBicluster(1).attributes['pc1'].keys()
+    conditions = c1.biclusters[1].attributes['pc1'].keys()
     for i in sorted(c1.biclusters.keys()):
-        pc1 = c1.getBicluster(i).attributes['pc1']
+        pc1 = c1.biclusters[i].attributes['pc1']
         fpcWrite.append(str(i)+','+','.join([str(pc1[j]) for j in conditions]))
 
     # Dump out file
@@ -1231,11 +1229,9 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
 
         print '\nMaking files...'
         for i in range(len(pssms)):
-            clustSize = utils.randPSSMClustSize((c1.getBicluster(int(pssmsNames[i].split('_')[0]))).num_genes())
-            utils.makeFiles(nucFreqs=c1.getNucFreqsUpstream(),
-                            queryPssms=[pssms[pssmsNames[i]]],
-                            targetPssms=randPssmsDict[clustSize].values(),
-                            num=i)
+            clustSize = utils.rand_pssm_clust_size(c1.biclusters[int(pssmsNames[i].split('_')[0])].num_genes())
+            utils.make_files(c1.getNucFreqsUpstream(), [pssms[pssmsNames[i]]],
+                             randPssmsDict[clustSize].values(), i)
 
         # Run this using all cores available
         cpus = cpu_count()
@@ -1312,7 +1308,7 @@ def __convert_mirvestigator_3putr_results(c1):
             if not line[1]=='NA':
                 miRNA_mature_seq_ids = []
                 for i in line[1].split('_'):
-                    miRNA_mature_seq_ids += utils.miRNAInDict(i.lower(), miRNAIDs)
+                    miRNA_mature_seq_ids += utils.mirna_in_dict(i.lower(), miRNAIDs)
                 miRNA_matches[line[0]] = {'miRNA':line[1],'model':line[2],'mature_seq_ids':miRNA_mature_seq_ids}
                 for m1 in miRNA_mature_seq_ids:
                     pssms[line[0]].addMatch(factor=m1, confidence=line[2])
@@ -1369,14 +1365,14 @@ def __make_replication_pvalues(c1):
     with open('output/cluster.members.genes.txt','w') as cmgFile:
         writeMe = []
         for b1 in c1.biclusters:
-            writeMe.append(str(b1)+' '+' '.join(c1.getBicluster(b1).genes))
+            writeMe.append(str(b1)+' '+' '.join(c1.biclusters[b1].genes))
         cmgFile.write('\n'.join(writeMe))
 
     # Dump a file containing all the genes for each cluster
     with open('output/cluster.members.conditions.txt','w') as cmcFile:
         writeMe = []
         for b1 in c1.biclusters:
-            writeMe.append(str(b1)+' '+' '.join(c1.getBicluster(b1).conditions))
+            writeMe.append(str(b1)+' '+' '.join(c1.biclusters[b1].conditions))
         cmcFile.write('\n'.join(writeMe))
 
     # Run replication on all datasets
@@ -1405,7 +1401,7 @@ def __read_replication_pvalues(c1):
         if not line:
             break
         splitUp = line.strip().split(',')
-        b1 = c1.getBicluster(int(splitUp[0].replace('"','')))
+        b1 = c1.biclusters[int(splitUp[0].replace('"',''))]
         b1.add_attribute(key='replication_French',value={'French_new.resid.norm':splitUp[3], 'French_avg.resid.norm':splitUp[4], 'French_norm.perm.p':splitUp[5], 'French_pc1.var.exp':splitUp[9], 'French_avg.pc1.var.exp':splitUp[10], 'French_pc1.perm.p':splitUp[11], 'French_survival':splitUp[15], 'French_survival.p':splitUp[16], 'French_survival.age':splitUp[17], 'French_survival.age.p':splitUp[18]})
         b1.add_attribute(key='replication_French_all',value={'French_all_new.resid.norm':splitUp[6], 'French_all_avg.resid.norm':splitUp[7], 'French_all_norm.perm.p':splitUp[8], 'French_all_pc1.var.exp':splitUp[12], 'French_all_avg.pc1.var.exp':splitUp[13], 'French_all_pc1.perm.p':splitUp[14], 'French_all_survival':splitUp[19], 'French_all_survival.p':splitUp[20], 'French_all_survival.age':splitUp[21], 'French_all_survival.age.p':splitUp[22]})
     inFile.close()
@@ -1418,7 +1414,7 @@ def __read_replication_pvalues(c1):
         if not line:
             break
         splitUp = line.strip().split(',')
-        b1 = c1.getBicluster(int(splitUp[0].replace('"','')))
+        b1 = c1.biclusters[int(splitUp[0].replace('"',''))]
         b1.add_attribute(key='replication_REMBRANDT',value={'REMBRANDT_new.resid.norm':splitUp[3], 'REMBRANDT_avg.resid.norm':splitUp[4], 'REMBRANDT_norm.perm.p':splitUp[5], 'REMBRANDT_pc1.var.exp':splitUp[9], 'REMBRANDT_avg.pc1.var.exp':splitUp[10], 'REMBRANDT_pc1.perm.p':splitUp[11], 'REMBRANDT_survival':splitUp[15], 'REMBRANDT_survival.p':splitUp[16], 'REMBRANDT_survival.age':splitUp[17], 'REMBRANDT_survival.age.p':splitUp[18]})
         b1.add_attribute(key='replication_REMBRANDT_all',value={'REMBRANDT_all_new.resid.norm':splitUp[6], 'REMBRANDT_all_avg.resid.norm':splitUp[7], 'REMBRANDT_all_norm.perm.p':splitUp[8], 'REMBRANDT_all_pc1.var.exp':splitUp[12], 'REMBRANDT_all_avg.pc1.var.exp':splitUp[13], 'REMBRANDT_all_pc1.perm.p':splitUp[14], 'REMBRANDT_all_survival':splitUp[19], 'REMBRANDT_all_survival.p':splitUp[20], 'REMBRANDT_all_survival.age':splitUp[21], 'REMBRANDT_all_survival.age.p':splitUp[22]})
     # Read in replication p-values - GSE7696 Dataset
@@ -1430,7 +1426,7 @@ def __read_replication_pvalues(c1):
         if not line:
             break
         splitUp = line.strip().split(',')
-        b1 = c1.getBicluster(int(splitUp[0].replace('"','')))
+        b1 = c1.biclusters[int(splitUp[0].replace('"',''))]
         b1.add_attribute(key='replication_GSE7696',value={'GSE7696_new.resid.norm':splitUp[3], 'GSE7696_avg.resid.norm':splitUp[4], 'GSE7696_norm.perm.p':splitUp[5], 'GSE7696_pc1.var.exp':splitUp[6], 'GSE7696_avg.pc1.var.exp':splitUp[7], 'GSE7696_pc1.perm.p':splitUp[8], 'GSE7696_survival':splitUp[9], 'GSE7696_survival.p':splitUp[10], 'GSE7696_survival.age':splitUp[11], 'GSE7696_survival.age.p':splitUp[12]})
     inFile.close()
     print 'Done.\n'
@@ -1461,7 +1457,7 @@ def __make_permuted_pvalues(c1):
         inLines = inFile.readlines()
         for line in inLines:
             splitUp = line.strip().split(',')
-            b1 = c1.getBicluster(int(splitUp[0].strip('"')))
+            b1 = c1.biclusters[int(splitUp[0].strip('"'))]
             b1.add_attribute(key='resid.norm.perm.p',value=str(splitUp[9]))
             b1.add_attribute(key='pc1.perm.p',value=str(splitUp[12]))
     print 'Done.\n'
@@ -1500,7 +1496,7 @@ def __make_functional_enrichment_and_go_term_similarity(c1):
         lines = [line.strip().split(',') for line in inLines]
 
     for line in lines:
-        b1 = c1.getBicluster(int(line[0].strip('"')))
+        b1 = c1.biclusters[int(line[0].strip('"'))]
         b1.add_attribute(key='goTermBP',value=line[2].strip('"').split(';'))
     print 'Done.\n'
 
@@ -1512,7 +1508,7 @@ def __add_hallmarks_of_cancer(c1):
         inLines = inFile.readlines()
         lines = [line.strip().split(',') for line in inLines]
         for line in lines:
-            b1 = c1.getBicluster(int(line[0].strip('"')))
+            b1 = c1.biclusters[int(line[0].strip('"'))]
             b1.add_attribute(key='hallmarksOfCancer',value=dict(zip(hallmarks,line[1:])))
         print 'Done.\n'
 
@@ -1600,7 +1596,7 @@ def add_correspondent_regulators(c1, causal_summary):
     """Dump out correspondent regulators (both mechanistically and causally predicted)"""
     correspondentRegulators = {}
     for causalFlow in causal_summary:
-        b1 = c1.getBicluster(int(causalFlow['Bicluster']))
+        b1 = c1.biclusters[int(causalFlow['Bicluster'])]
         ## Upstream (TFs)
         tfs = []
         # 1. MEME and WEEDER Upstream motifs
@@ -1648,7 +1644,7 @@ def add_correspondent_regulators(c1, causal_summary):
 
     ## Put correspondent regulators into cMonkeyWrapper object
     for biclust in correspondentRegulators.keys():
-        b1 = c1.getBicluster(biclust)
+        b1 = c1.biclusters[biclust]
         b1.add_attribute(key='correspondentRegulators',value=correspondentRegulators[biclust])
 
 
@@ -1658,10 +1654,10 @@ def write_final_result(c1):
     #################################################################
     print 'Write postProcessedVFinal.csv...'
     postOut = []
-    hallmarksOfCancer = c1.getBicluster(1).attributes['hallmarksOfCancer'].keys()
+    hallmarksOfCancer = c1.biclusters[1].attributes['hallmarksOfCancer'].keys()
     for i in sorted(c1.biclusters.keys()):
         writeMe = []
-        b1 = c1.getBicluster(i)
+        b1 = c1.biclusters[i]
         # Write file line by line
         #   a. Bicluster basics:  id, genes, conditions, resid, resid.norm, resid.norm.perm.p
         writeMe += [str(i), # id

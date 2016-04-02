@@ -19,19 +19,17 @@
 
 import re
 
-########################################################
-# Methods needed to convert miRNA names to miRBase IDs #
-########################################################
-def miRNAInDict(miRNA, miRNAIDs):
-    retMe = []
-    for i in miRNAIDs.keys():
-        if __compare_mirna_names(miRNA, i):
-            retMe.append(miRNAIDs[i])
-    return retMe
+
+def mirna_in_dict(mirna, mirna_ids):
+    """convert miRNA names to miRBase IDs"""
+    return [mirna_id for name, mirna_id in mirna_ids.items()
+            if __compare_mirna_names(mirna, name)]
+
 
 def __compare_mirna_names(a, b):
-    if a==b:
+    if a == b:
         return True
+
     if len(a) < len(b):
         re1 = re.compile(a+'[a-z]$')
         if re1.match(b):
@@ -42,94 +40,54 @@ def __compare_mirna_names(a, b):
             return True
     return False
 
-"""
-def uniquify(array1):
-    inThere = []
-    outThere = []
-    for i in array1:
-        if i[0]<i[2]:
-            if not i[0]+i[2] in inThere:
-                inThere.append(i[0]+i[2])
-                outThere.append(i)
-        else: 
-            if not i[2]+i[0] in inThere:
-                inThere.append(i[2]+i[0])
-                outThere.append(i)
-    return outThere
-    """
 
-def randPSSMClustSize(clustSize):
-    if clustSize <= 5:
+def rand_pssm_clust_size(clust_size):
+    if clust_size <= 5:
         return 5
-    elif clustSize <= 10:
+    elif clust_size <= 10:
         return 10
-    elif clustSize <= 15:
+    elif clust_size <= 15:
         return 15
-    elif clustSize <= 20:
+    elif clust_size <= 20:
         return 20
-    elif clustSize <= 25:
+    elif clust_size <= 25:
         return 25
-    elif clustSize <= 30:
+    elif clust_size <= 30:
         return 30
-    elif clustSize <= 35:
+    elif clust_size <= 35:
         return 35
-    elif clustSize <= 40:
+    elif clust_size <= 40:
         return 40
-    elif clustSize <= 45:
+    elif clust_size <= 45:
         return 45
-    elif clustSize <= 50:
+    elif clust_size <= 50:
         return 50
-    elif clustSize <= 55:
+    elif clust_size <= 55:
         return 55
-    elif clustSize <= 60:
+    elif clust_size <= 60:
         return 60
     else:
         return 65
 
-"""
-# Build a pssms dictionary for TOMTOM
-def compilePssms(clusterMemeRuns,maxEValue):
-    pssmsNames = []
-    pssms = []
-    for i in range(len(clusterMemeRuns)):
-        motifSet = clusterMemeRuns[i]
-        for j in range(len(motifSet)):
-            pssm = motifSet[j]
-            if float(pssm.getEValue())<=maxEValue:
-                pssmsNames.append(str(i)+'.'+str(j))
-                pssm.setName(str(i)+'.'+str(j))
-                pssms.append(deepcopy(pssm))
-    return dict(zip(pssmsNames,pssms))
-"""
-"""
-# Returns a list of all p-values
-def getPValues(tomtomResults):
-    pValues = []
-    allScores = tomtomResults.getAllScores()
-    o1 = allScores.keys()[0]
-    for i in allScores[o1]:
-        pValues.append(allScores[o1][i]['pValue'])
-    return pValues
-"""
 
-# Make the files for a TomTom run
-def makeFiles(nucFreqs, queryPssms, targetPssms, num, strands='+ -'):
-    # Header crap
-    memeHeader = ''
-    memeHeader += 'MEME version 3.0\n\n'
-    memeHeader += 'ALPHABET= ACGT\n\n'
+def make_files(nuc_freqs, query_pssms, target_pssms, num, strands='+ -'):
+    """Make the files for a TomTom run"""
+    meme_header = ''
+    meme_header += 'MEME version 3.0\n\n'
+    meme_header += 'ALPHABET= ACGT\n\n'
+
     # Here is where we tell it what strand: for miRNAs this would just be '+'
-    memeHeader += 'strands: '+strands+'\n\n'
-    memeHeader += 'Background letter frequencies (from genome):\n'
-    memeHeader += 'A '+str(round(float(nucFreqs['A']),3))+' C '+str(round(float(nucFreqs['C']),3))+' G '+str(round(float(nucFreqs['G']),3))+' T '+str(round(float(nucFreqs['T']),3))+'\n\n'
+    meme_header += 'strands: '+strands+'\n\n'
+    meme_header += 'Background letter frequencies (from genome):\n'
+    meme_header += 'A '+str(round(float(nuc_freqs['A']),3))+' C '+str(round(float(nuc_freqs['C']),3))+' G '+str(round(float(nuc_freqs['G']),3))+' T '+str(round(float(nuc_freqs['T']),3))+'\n\n'
+
     # Make query PSSM file
-    queryFile = open('tmp/query'+str(num)+'.tomtom','w')
-    queryFile.write(memeHeader)
-    queryFile.write('\n\n'.join([pssm1.getMemeFormatted() for pssm1 in queryPssms]))
-    queryFile.close()
+    with open('tmp/query%d.tomtom' % num, 'w') as query_file:
+        query_file.write(meme_header)
+        query_file.write('\n\n'.join([pssm1.getMemeFormatted() for pssm1 in query_pssms]))
+
     # Make target PSSM file
-    targetFile = open('tmp/target'+str(num)+'.tomtom','w')
-    targetFile.write(memeHeader)
-    targetFile.write('\n\n'.join([pssm1.getMemeFormatted() for pssm1 in targetPssms]))
-    targetFile.close()
+    with open('tmp/target%d.tomtom' % num,'w') as target_file:
+        target_file.write(meme_header)
+        target_file.write('\n\n'.join([pssm1.getMemeFormatted() for pssm1 in target_pssms]))
 

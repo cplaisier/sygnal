@@ -661,5 +661,3 @@ class miRvestigator:
         # P(Alignment)
         output += [outMe[4][0],totP,outMe[4][2],vitP]
         return [str(i) for i in output]
-
-
