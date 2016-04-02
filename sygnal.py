@@ -89,6 +89,10 @@ ALL_RATIOS_PATH = 'expression/gbmTCGA_exprMat.tsv'
 CMONKEY2_RUNDB = '../out/cmonkey_run.db'
 REPLICATION_DATASET_NAMES = ['French','REMBRANDT','GSE7696']
 
+
+g_weeder_args    = None
+g_weeder_results = None
+
 #################################################################
 ## Functions                                                   ##
 #################################################################
@@ -144,15 +148,12 @@ def run_meme(runarg):
          meme_args['max_motif_width'], meme_args['revcomp'])
 
 
-weeder_args = None
-weeder_results = None
-
 def weeder(bicluster, seqfile, bgfile, size, enriched, revcomp):
     """
     Run weeder and parse its output
     First weederTFBS -W 6 -e 1, then weederTFBS -W 8 -e 2, and finally adviser
     """
-    global weeder_results
+    global g_weeder_results
     print "run weeder on '%s'" % seqfile
 
     # First run weederTFBS
@@ -160,8 +161,8 @@ def weeder(bicluster, seqfile, bgfile, size, enriched, revcomp):
     if revcomp:
         weeder_args += ' S'
     errout = open('tmp/weeder/stderr.out','w')
-    weederProc = Popen("weederlauncher " + weeder_args, shell=True, stdout=PIPE, stderr=errout)
-    output = weederProc.communicate()
+    weeder_proc = Popen("weederlauncher %s" % weeder_args, shell=True, stdout=PIPE, stderr=errout)
+    output = weeder_proc.communicate()
 
     # Now parse output from weeder
     PSSMs = []
@@ -261,15 +262,15 @@ def weeder(bicluster, seqfile, bgfile, size, enriched, revcomp):
         PSSMs += [pssm('%d_motif%d_weeder' % (bicluster_id, motif_id),
                        len(instances), hitBp[len(matrix)][1], matrix, red_motifs, 'weeder')]
         motif_id += 1
-    weeder_results[bicluster] = PSSMs
+    g_weeder_results[bicluster] = PSSMs
 
 
 def run_weeder(run_arg):
-    global weeder_args
+    global g_weeder_args
 
     run_num, filepath = run_arg
-    weeder(run_num, filepath, weeder_args['bgfile'], weeder_args['size'],
-           weeder_args['enriched'], weeder_args['revcomp'])
+    weeder(run_num, filepath, g_weeder_args['bgfile'], g_weeder_args['size'],
+           g_weeder_args['enriched'], g_weeder_args['revcomp'])
 
 
 def tomtom(num, dist_meth='ed', q_thresh=1, min_overlap=6):
@@ -498,7 +499,7 @@ def compute_upstream_motifs_meme(c1):
 def __compute_motifs_weeder(resultpath, biclusters, add_result, bicluster_seqs, args_dict):
     """Generic motif detection function with weeder
     """
-    global weeder_args, weeder_results
+    global g_weeder_args, g_weeder_results
 
     if not os.path.exists(resultpath):
         if os.path.exists('tmp'):
@@ -520,11 +521,11 @@ def __compute_motifs_weeder(resultpath, biclusters, add_result, bicluster_seqs, 
                     outfile.write('\n'.join(['>'+gene+'\n'+seqs[gene] for gene in seqs]))
 
         # Where all the results will be stored
-        weeder_results = mgr.dict()
+        g_weeder_results = mgr.dict()
 
         # Parameters to use for running Weeder
         # Set to run Weeder on 'medium' setting which means 6bp, 8bp and 10bp motifs
-        weeder_args = mgr.dict(args_dict)
+        g_weeder_args = mgr.dict(args_dict)
 
         print 'Running Weeder...'
         print 'There are %d CPUs available.' % cpu_count()
@@ -535,18 +536,19 @@ def __compute_motifs_weeder(resultpath, biclusters, add_result, bicluster_seqs, 
 
         # Dump weeder results as a pickle file
         with open(resultpath,'wb') as outfile:
-            cPickle.dump(deepcopy(weeder_results), outfile)
+            cPickle.dump(deepcopy(g_weeder_results), outfile)
 
     else:
         print 'Loading from precached object...'
         with open(resultpath,'rb') as infile:
-            weeder_results = cPickle.load(infile)
+            g_weeder_results = cPickle.load(infile)
 
     print 'Storing output...'
-    for i, pssms in weeder_results.items():
+    for i, pssms in g_weeder_results.items():
         for p in pssms:
             p.setMethod('weeder')
             add_result(i, p)
+
 
 def compute_upstream_motifs_weeder(c1):
     if not c1.weeder_upstream:
@@ -1051,23 +1053,22 @@ def __expand_tf_factor_list():
     # Add expanded TF regulators
     pssms = c1.pssms_upstream()
     for pssm in pssms:
-        expandedFactors = {}
+        expanded_factors = {}
         matches = pssms[pssm].getMatches()
         # Collapse matches to a set of entrez IDs and add expanded factors
         if not matches==None:
             for match in matches:
                 if match['factor'] in tfName2entrezId:
                     factor = tfName2entrezId[match['factor']]
-                    if not factor in expandedFactors:
-                        expandedFactors[factor] = [factor]
+                    if not factor in expanded_factors:
+                        expanded_factors[factor] = [factor]
                         for family in tfFamilies:
                             if factor in tfFamilies[family]:
-                                expandedFactors[factor] += tfFamilies[family]
+                                expanded_factors[factor] += tfFamilies[family]
             # Push expanded TF factor list into the PSSM object
-            for factor in expandedFactors:
-                #print factor,expandedFactors[factor]
-                for expandedFactor in list(set(expandedFactors[factor])):
-                    pssms[pssm].addExpandedMatch(expandedFactor, factor)
+            for factor in expanded_factors:
+                for expanded_factor in list(set(expanded_factors[factor])):
+                    pssms[pssm].addExpandedMatch(expanded_factor, factor)
     print 'Finished expanding TF factor list.\n'
     return tfName2entrezId, tfFamilies
 
@@ -1125,7 +1126,7 @@ def __expand_and_correlate_tfbsdb_tfs(tf_name2entrezid, tf_families, exp_data, a
         b1 = c1.getBicluster(bicluster)
         # Get the tfbs_db attribute and for each TF get the list of expanded factors
         tfs = b1.attributes['tfbs_db']
-        expandedFactors = {}
+        expanded_factors = {}
         if not tfs==None:
             for tf in tfs['tf'].split(' '):
                 if tf[0:2]=='V_':
@@ -1133,17 +1134,17 @@ def __expand_and_correlate_tfbsdb_tfs(tf_name2entrezid, tf_families, exp_data, a
                 # Get the list of expanded factors
                 if tf in tf_name2entrezid:
                     factor = tf_name2entrezid[tf]
-                    if not factor in expandedFactors:
-                        expandedFactors[factor] = [factor]
+                    if not factor in expanded_factors:
+                        expanded_factors[factor] = [factor]
                         for family_factors in tf_families.values():
                             if factor in family_factors:
-                                expandedFactors[factor] += family_factors
-                        expandedFactors[factor] = list(set(expandedFactors[factor]))
+                                expanded_factors[factor] += family_factors
+                        expanded_factors[factor] = list(set(expanded_factors[factor]))
         
         # Push expanded TF factor list into the PSSM object
-        if len(expandedFactors) > 0:
-            print factor, expandedFactors
-            b1.add_attribute('tfbs_db_expanded', expandedFactors)
+        if len(expanded_factors) > 0:
+            print factor, expanded_factors
+            b1.add_attribute('tfbs_db_expanded', expanded_factors)
 
     # [rho, pValue] = correlation(a1,a2)
     for bicluster in c1.biclusters:
@@ -1948,16 +1949,15 @@ def write_final_result(c1):
 
     print 'Done.\n'
 
-## TODO: add main
-# if __name__ == '__main__':
-# Initialize sygnal output directory and conversion dictionaries
-sygnal_init()
-id2entrez, entrez2id = read_synonyms()
-miRNAIDs, miRNAIDs_rev = miRNA_mappings()
-c1 = compute_additional_info()
-c1 = perform_postprocessing(c1)
-run_neo()
-causal_summary = write_neo_summary()
-add_correspondent_regulators(c1, causal_summary)
-write_final_result(c1)
+if __name__ == '__main__':
+    # Initialize sygnal output directory and conversion dictionaries
+    sygnal_init()
+    id2entrez, entrez2id = read_synonyms()
+    miRNAIDs, miRNAIDs_rev = miRNA_mappings()
+    c1 = compute_additional_info()
+    c1 = perform_postprocessing(c1)
+    run_neo()
+    causal_summary = write_neo_summary()
+    add_correspondent_regulators(c1, causal_summary)
+    write_final_result(c1)
 
