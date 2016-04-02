@@ -44,8 +44,10 @@ import gzip
 ## rpy2 integration                                            ##
 #################################################################
 
+
 def make_rint_vector(a):
     return IntVector(map(lambda i: rinterface.NA_Integer if i == 'NA' else int(i), a))
+
 
 def make_rfloat_vector(a):
     return FloatVector(map(lambda f: rinterface.NA_Real if f == 'NA' else float(f), a))
@@ -56,23 +58,23 @@ def make_rfloat_vector(a):
 #################################################################
 
 # For MEME analysis
-bgFile = 'seqs/bgFile.meme'
-nMotifs = 2
-regions = [ 'upstream' ]
-motifWidth = { 'upstream': [6, 12] }
-revComp = { 'upstream': True }
+MEME_BGFILE       = 'seqs/bgFile.meme'
+MEME_NMOTIFS      = 2
+MEME_MOTIF_WIDTHS = {'upstream': [6, 12]}
+MEME_REVCOMP      = {'upstream': True}
+
 # Parameters for filtering results
-maxEValue = 10
-leo_nb_AtoB = 0.5 # Equates to ~3 times better model fit than next best model
-mlogp_M_AtoB = 0.05
-rhoCut = 0.3
-pVCut = 0.05
-percTargets = 0.1
-postProcessedFile = 'postProcessed_gbmTCGA_pita.csv'
-fpcFile = 'biclusterFirstPrincComponents.csv'
-subsets = ['all'] # Might be nice to include subtypes
-subsetsPos = { 'all': [0,422] } # Might be nice to include subtypes
-randPssmsDir = 'randPSSMs'
+MAX_EVALUE        = 10.0
+LEO_NB_ATOB       = 0.5  # Equates to ~3 times better model fit than next best model
+MLOGP_M_ATOB      = 0.05
+RHO_CUT           = 0.3
+PVALUE_CUT        = 0.05
+PERC_TARGETS      = 0.1
+POSTPROCESSED_FILENAME = 'postProcessed_gbmTCGA_pita.csv'
+FPC_FILENAME = 'biclusterFirstPrincComponents.csv'
+SUBSETS = ['all'] # Might be nice to include subtypes
+SUBSETS_POS = { 'all': [0,422] } # Might be nice to include subtypes
+RAND_PSSMS_DIR = 'randPSSMs'
 
 # Detenrmine the working directories, we pass this to the
 # external R scripts
@@ -88,21 +90,34 @@ RATIOS_PATH = '../gbmTCGA_exprMat_medianFiltered.tsv'
 ALL_RATIOS_PATH = 'expression/gbmTCGA_exprMat.tsv'
 CMONKEY2_RUNDB = '../out/cmonkey_run.db'
 REPLICATION_DATASET_NAMES = ['French','REMBRANDT','GSE7696']
+CM_PKL_PATH = 'output/c1_all.pkl'
 
+CLUSTER_GENES_PATH = 'output/cluster.members.genes.txt'
+CLUSTER_CONDS_PATH = 'output/cluster.members.conditions.txt'
+CLUSTER_EIGENGENES_PATH = 'output/biclusterEigengenes.csv'
+CLUSTER_VARIANCE_EXPLAINED_PATH = 'output/biclusterVarianceExplained.csv'
+PHENOTYPES_PATH = 'extras/phenotypes.csv'
+POSTPROCESS_PKL_PATH = 'output/postProcessed.pkl'
 
-g_weeder_args    = None
-g_weeder_results = None
+# global state for concurrent operations
+g_weeder_args        = None
+g_weeder_results     = None
+g_meme_args          = None
+g_cluster_meme_runs  = None
+g_pred_dict          = None
+g_pred_total_targets = None
+g_biclusters         = None
+g_ratios             = None
+g_phenotypes         = None
 
 #################################################################
 ## Functions                                                   ##
 #################################################################
 
-meme_args = None
-cluster_meme_runs = None
 
 def meme(num, seqfile, bgfile, nmotifs, min_motif_width, max_motif_width, revcomp, seed=None):
     """ Run meme and get the output into PSSMs"""
-    global cluster_meme_runs
+    global g_cluster_meme_runs
 
     # Arguments for meme
     args = '%s -bfile %s -nostatus -text -time 600 -dna -maxsize 9999999 -evt 1e9 -mod zoops -minw %d -maxw %d -nmotifs %d' % (seqfile, bgfile, min_motif_width, max_motif_width, nmotifs)
@@ -135,17 +150,17 @@ def meme(num, seqfile, bgfile, nmotifs, min_motif_width, max_motif_width, revcom
                 matrix += [[float(let) for let in output[i].strip().split(' ') if let]]
             PSSMs.append(pssm('%s_motif%s_meme' % ((seqfile.split('_')[1]).split('.')[0], desc_comps[1]),
                               sites, evalue, matrix, [], 'meme'))
-    cluster_meme_runs[num] = PSSMs
+    g_cluster_meme_runs[num] = PSSMs
 
 
 def run_meme(runarg):
     """Wrapper function to run the meme function using a multiprocessing pool
     """
-    global meme_args
+    global g_meme_args
 
     run_num, filepath = runarg
-    meme(run_num, filepath, meme_args['bgfile'], meme_args['nmotifs'], meme_args['min_motif_width'],
-         meme_args['max_motif_width'], meme_args['revcomp'])
+    meme(run_num, filepath, g_meme_args['bgfile'], g_meme_args['nmotifs'], g_meme_args['min_motif_width'],
+         g_meme_args['max_motif_width'], g_meme_args['revcomp'])
 
 
 def weeder(bicluster, seqfile, bgfile, size, enriched, revcomp):
@@ -296,7 +311,6 @@ def phyper(q, m, n, k, lower_tail=False):
             r_phyper(FloatVector(q), FloatVector(m), FloatVector(n), FloatVector(k), **kwargs)]
 
 
-# Get a correlation p-value from R
 def correlation(a1, a2):
     """
     Calculate the correlation coefficient and p-value between two variables.
@@ -309,7 +323,6 @@ def correlation(a1, a2):
     return res['estimate'][0], res['p.value'][0]
 
 
-# Compute survival p-value from R
 def survival(survival, dead, pc1, age):
     """
     Calculate the survival correlation coefficient and p-value between two variables.
@@ -328,7 +341,6 @@ surv <- function(s, dead, pc1, age) {
     return [[res[0], res[1]], [res[2], res[3]]]
 
 
-# Compare miRNA names
 def compareMiRNANames(a, b):
     """
     Match miRNA names.
@@ -427,12 +439,13 @@ def read_cmonkey_run(path):
 
     return c1
 
+
 def compute_upstream_motifs_meme(c1):
     """
     A. Upstream motifs (MEME) ##
     If MEME hasn't been run on the biclusters upstream sequences then do so
     """
-    global meme_args, cluster_meme_runs
+    global g_meme_args, g_cluster_meme_runs
 
     if not c1.meme_upstream:
         print 'Running MEME on Upstreams:'
@@ -459,13 +472,13 @@ def compute_upstream_motifs_meme(c1):
                         outfile.write('\n'.join(['>'+gene+'\n'+seqs[gene] for gene in seqs]))
 
             # Where all the results will be stored
-            cluster_meme_runs = mgr.dict()
+            g_cluster_meme_runs = mgr.dict()
 
             # Parameters to use for running MEME
-            meme_args = mgr.dict( { 'bgfile': bgFile, 'nmotifs': nMotifs,
-                                    'min_motif_width': motifWidth['upstream'][0],
-                                    'max_motif_width': motifWidth['upstream'][1],
-                                    'revcomp': revComp['upstream'] } )
+            g_meme_args = mgr.dict({'bgfile': MEME_BGFILE, 'nmotifs': MEME_NMOTIFS,
+                                    'min_motif_width': MEME_MOTIF_WIDTHS['upstream'][0],
+                                    'max_motif_width': MEME_MOTIF_WIDTHS['upstream'][1],
+                                    'revcomp': MEME_REVCOMP['upstream']})
 
             print 'Running MEME on Upstream sequences...'
             print 'There are %d CPUs available.' % cpu_count()
@@ -476,15 +489,15 @@ def compute_upstream_motifs_meme(c1):
 
             # Dump weeder results as a pickle file
             with open('output/meme_upstream.pkl','wb') as pklFile:
-                cPickle.dump(deepcopy(cluster_meme_runs), pklFile)
+                cPickle.dump(deepcopy(g_cluster_meme_runs), pklFile)
         else:
             print 'Loading from precached object...'
             with open('output/meme_upstream.pkl','rb') as pklFile:
-                cluster_meme_runs = cPickle.load(pklFile)
+                g_cluster_meme_runs = cPickle.load(pklFile)
 
         # Add PSSMs to cMonkey object
         print 'Storing output...'
-        for i, pssms in cluster_meme_runs.items():
+        for i, pssms in g_cluster_meme_runs.items():
             for pssm1 in pssms:
                 b1 = c1.getBicluster(i)
                 pssm1.setMethod('meme')
@@ -556,8 +569,10 @@ def compute_upstream_motifs_weeder(c1):
                                 c1.biclusters,
                                 lambda bi, p: c1.getBicluster(bi).add_pssm_upstream(p),
                                 lambda bi: c1.getBiclusterSeqsUpstream(bi),
-                                { 'bgfile': 'HS', 'size': 'small', 'enriched': 'T50', 'revcomp': True })
+                                {'bgfile': 'HS', 'size': 'small', 'enriched': 'T50',
+                                 'revcomp': True})
         c1.weeder_upstream = True
+
 
 def compute_3pUTR_weeder(c1):
     if not c1.weeder_3pUTR:
@@ -565,24 +580,21 @@ def compute_3pUTR_weeder(c1):
                                 c1.biclusters,
                                 lambda bi, p: c1.getBicluster(bi).add_pssm_3putr(p),
                                 lambda bi: c1.getBiclusterSeqs3pUTR(bi),
-                                { 'bgfile': 'HS3P', 'size': 'small', 'enriched': 'T50', 'revcomp': False })
+                                {'bgfile': 'HS3P', 'size': 'small', 'enriched': 'T50',
+                                 'revcomp': False})
         c1.weeder_3pUTR = True
 
-
-predDict = None
-pred_totalTargets = None
-biclusters = None
 
 def cluster_hypergeo(bicluster_id):
     """concurrent computation
     k = overlap, N = potential target genes, n = miRNA targets, m = cluster genes
     Take gene list and compute overlap with each miRNA
     """
-    global predDict, pred_totalTargets, biclusters
-    db = predDict
-    all_genes = pred_totalTargets[0]
+    global g_pred_dict, g_pred_total_targets, g_biclusters
+    db = g_pred_dict
+    all_genes = g_pred_total_targets[0]
 
-    genes = all_genes.intersection(biclusters[bicluster_id].genes)
+    genes = all_genes.intersection(g_biclusters[bicluster_id].genes)
     m1s = []
     q = []
     m = []
@@ -650,15 +662,15 @@ def __read_predictions(pred_path, pkl_path, genesInBiclusters, manager):
             tmp_dict = cPickle.load(pklFile)
             tmp_set = cPickle.load(pklFile)
     
-    predDict = manager.dict(tmp_dict)
-    pred_totalTargets = manager.list()
-    pred_totalTargets.append(set(tmp_set))
-    return predDict, pred_totalTargets
+    pred_dict = manager.dict(tmp_dict)
+    pred_total_targets = manager.list()
+    pred_total_targets.append(set(tmp_set))
+    return pred_dict, pred_total_targets
 
 
 def __compute_enrichment(c1, name,  pkl_path, pred_path, pred_pkl_path):
     """General enrichment analysis function"""
-    global predDict, pred_totalTargets, biclusters
+    global g_pred_dict, g_pred_total_targets, g_biclusters
 
     print 'Running %s enrichment on Biclusters:' % name
 
@@ -666,11 +678,10 @@ def __compute_enrichment(c1, name,  pkl_path, pred_path, pred_pkl_path):
         print 'Get a list of all genes in run...'
         genesInBiclusters = __bicluster_genes(c1)
         mgr = Manager()
-        biclusters = mgr.dict(c1.biclusters)
-        predDict, pred_totalTargets = __read_predictions(pred_path, pred_pkl_path,
-                                                         genesInBiclusters, mgr)
-        print '%s prediction has %d TFs.' % (name, len(predDict))
-        allGenes = pred_totalTargets[0]
+        g_biclusters = mgr.dict(c1.biclusters)
+        g_pred_dict, g_pred_total_targets = __read_predictions(pred_path, pred_pkl_path,
+                                                               genesInBiclusters, mgr)
+        print '%s prediction has %d TFs.' % (name, len(g_pred_dict))
 
         print 'Running %s enrichment analyses...' % name
         pool = Pool(processes=cpu_count())
@@ -685,6 +696,7 @@ def __compute_enrichment(c1, name,  pkl_path, pred_path, pred_pkl_path):
         with open(pkl_path, 'rb') as pklFile:
             result = cPickle.load(pklFile)
     return result
+
 
 def compute_tfbsdb_enrichment(c1):
     """D. Upstream TFBS DB enrichment Analysis"""
@@ -746,8 +758,6 @@ def compute_3pUTR_targetscan_set_enrichment(c1):
         c1.targetscan_3pUTR = True
 
 
-CM_PKL_PATH = 'output/c1_all.pkl'
-
 def compute_additional_info():
     if not os.path.exists(CM_PKL_PATH):
         c1 = read_cmonkey_run(CMONKEY2_RUNDB)
@@ -780,11 +790,9 @@ def compute_additional_info():
     return c1
 
 
-g_ratios = None
-g_phenotypes = None
-
 def post_process(bicluster):
-    global g_ratios
+    global g_ratios, g_phenotypes
+
     def clean_name(name):
         comps = name.split('.')
         return '%s.%s.%s' % (comps[0], comps[1], comps[2])
@@ -825,13 +833,6 @@ def post_process(bicluster):
     attributes['Survival.AGE'] = dict(zip(['z', 'pValue'], s1[1]))
 
     return attributes
-
-CLUSTER_GENES_PATH = 'output/cluster.members.genes.txt'
-CLUSTER_CONDS_PATH = 'output/cluster.members.conditions.txt'
-CLUSTER_EIGENGENES_PATH = 'output/biclusterEigengenes.csv'
-CLUSTER_VARIANCE_EXPLAINED_PATH = 'output/biclusterVarianceExplained.csv'
-PHENOTYPES_PATH = 'extras/phenotypes.csv'
-POSTPROCESS_PKL_PATH = 'output/postProcessed.pkl'
 
 
 def __read_ratios(path, c1):
@@ -1073,7 +1074,8 @@ def __expand_tf_factor_list():
     return tfName2entrezId, tfFamilies
 
 
-def __correlate_tfs_with_cluster_eigengenes():
+def __correlate_tfs_with_cluster_eigengenes(c1):
+
     #######################################################################
     ## Filter expanded TFs through correlation with bicluster eigengenes ##
     #######################################################################
@@ -1096,20 +1098,21 @@ def __correlate_tfs_with_cluster_eigengenes():
         for pssm in bicluster.pssms_upstream:
             factors = pssm.getExpandedMatches()
             compared = {}
-            for subset in subsets:
+            for subset in SUBSETS:
                 compared[subset] = []
             # Get maximum amount of correlation positive or negative
-            if not factors==None:
+            if not factors is None:
                 print b1, pssm.getName(), len(factors)
                 for factor in factors:
-                    for subset in subsets:
+                    for subset in SUBSETS:
                         corMax = []
                         if factor['factor'] in exp_data.keys():
-                            eigengene = biclusters[b1].attributes['pc1']
+                            eigengene = bicluster.attributes['pc1']
                             if not factor['factor'] in compared[subset]:
                                     compared[subset].append(factor['factor'])
-                                    cor1 = correlation([eigengene[i] for i in all_names][subsetsPos[subset][0]:subsetsPos[subset][1]],
-                                                       [exp_data[factor['factor']][i] for i in all_names][subsetsPos[subset][0]:subsetsPos[subset][1]])
+                                    cor1 = correlation([eigengene[i]
+                                                        for i in all_names][SUBSETS_POS[subset][0]:SUBSETS_POS[subset][1]],
+                                                       [exp_data[factor['factor']][i] for i in all_names][SUBSETS_POS[subset][0]:SUBSETS_POS[subset][1]])
                                     print subset, factor['factor'], cor1
                                     if corMax==[] or abs(cor1[0])>abs(corMax[0]):
                                         corMax = cor1
@@ -1119,9 +1122,9 @@ def __correlate_tfs_with_cluster_eigengenes():
     return exp_data, all_names
 
 
-def __expand_and_correlate_tfbsdb_tfs(tf_name2entrezid, tf_families, exp_data, all_names):
+def __expand_and_correlate_tfbsdb_tfs(c1, tf_name2entrezid, tf_families, exp_data,
+                                      all_names):
     print 'Expand and correlate TFBS_DB TFs...'
-
     for bicluster in c1.biclusters:
         b1 = c1.getBicluster(bicluster)
         # Get the tfbs_db attribute and for each TF get the list of expanded factors
@@ -1151,24 +1154,26 @@ def __expand_and_correlate_tfbsdb_tfs(tf_name2entrezid, tf_families, exp_data, a
         b1 = c1.getBicluster(bicluster)
         factors = b1.attributes['tfbs_db_expanded'] if 'tfbs_db_expanded' in b1.attributes else None
         compared = {}
-        for subset in subsets:
+        for subset in SUBSETS:
             compared[subset] = []
         correlatedFactor = {}
-        for subset in subsets:
+        for subset in SUBSETS:
             correlatedFactor[subset] = []
 
         # Get maximum amount of correlation positive or negative
         if not factors is None:
             for factor1 in factors:
                 for factor2 in factors[factor1]:
-                    for subset in subsets:
+                    for subset in SUBSETS:
                         corMax = []
                         if factor2 in exp_data:
                             eigengene = b1.attributes['pc1']
                             if not factor2 in compared:
                                 compared[subset].append(factor2)
-                                cor1 = correlation([eigengene[i] for i in all_names][subsetsPos[subset][0]:subsetsPos[subset][1]],
-                                                   [exp_data[factor2][i] for i in all_names][subsetsPos[subset][0]:subsetsPos[subset][1]])
+                                cor1 = correlation([eigengene[i]
+                                                    for i in all_names][SUBSETS_POS[subset][0]:SUBSETS_POS[subset][1]],
+                                                   [exp_data[factor2][i]
+                                                    for i in all_names][SUBSETS_POS[subset][0]:SUBSETS_POS[subset][1]])
                                 print cor1
                                 if corMax==[] or abs(cor1[0])>abs(corMax[0]):
                                     corMax = cor1
@@ -1178,7 +1183,7 @@ def __expand_and_correlate_tfbsdb_tfs(tf_name2entrezid, tf_families, exp_data, a
     print 'Done.\n'
 
 
-def __write_first_principal_components():
+def __write_first_principal_components(c1):
     print 'Write biclusterFirstPrincComponents.csv...'
     # Get all first principal components for each bicluster
     fpcWrite = []
@@ -1188,13 +1193,13 @@ def __write_first_principal_components():
         fpcWrite.append(str(i)+','+','.join([str(pc1[j]) for j in conditions]))
 
     # Dump out file
-    with open('output/'+str(fpcFile),'w') as outfile:
+    with open(os.path.join('output', FPC_FILENAME), 'w') as outfile:
         outfile.write('Bicluster,'+','.join([j.strip() for j in conditions])+'\n')
         outfile.write('\n'.join(fpcWrite))
     print 'Done.\n'
 
 
-def __get_permuted_pvalues_for_upstream_meme_motifs():
+def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
     # Make needed directories
     if os.path.exists('tmp'):
         rmtree('tmp')
@@ -1214,12 +1219,12 @@ def __get_permuted_pvalues_for_upstream_meme_motifs():
         for i in [5,10,15,20,25,30,35,40,45,50,55,60,65]:
             stdout.write(str(i)+' ')
             stdout.flush()
-            pklFile = open(str(randPssmsDir)+'/pssms_upstream_'+str(i)+'.pkl','rb')
+            pklFile = open(RAND_PSSMS_DIR + '/pssms_upstream_'+str(i)+'.pkl', 'rb')
             randPssmsDict[i] = cPickle.load(pklFile)
             r1 = [randPssmsDict[i][pssm1].setMethod('meme') for pssm1 in randPssmsDict[i]]
             delMes = []
             for randPssm in randPssmsDict[i]:
-                if not float(randPssmsDict[i][randPssm].getEValue()) <= float(maxEValue):
+                if not float(randPssmsDict[i][randPssm].getEValue()) <= MAX_EVALUE:
                     delMes.append(randPssm)
             for j in delMes:
                 del randPssmsDict[i][j]
@@ -1274,12 +1279,12 @@ def __get_permuted_pvalues_for_upstream_meme_motifs():
             pssms[line[0]].setPermutedPValue(str(float(line[7])/float(1000)))
     print 'Done.\n'
 
-def __run_mirvestigator_3putr():
+
+def __run_mirvestigator_3putr(c1):
     """Compare 3' UTR Weeder Motifs to miRBase using miRvestigator"""
     print 'Running miRvestigator on 3\' UTR Motifs:'
     if not os.path.exists('output/m2m.pkl'):
         print 'Computing miRNA matches...'
-        biclusters = c1.biclusters
         pssms = c1.pssms_3putr()
         seqs3pUTR = c1.getSeqs3pUTR().values()
         m2m = miRvestigator(pssms.values(),seqs3pUTR,seedModel=[6,7,8],minor=True,p5=True,p3=True,wobble=False,wobbleCut=0.25,baseDir='output',species='mmu')
@@ -1291,7 +1296,8 @@ def __run_mirvestigator_3putr():
             m2m = cPickle.load(pklFile)
     print 'Done.\n'
 
-def __convert_mirvestigator_3putr_results():
+
+def __convert_mirvestigator_3putr_results(c1):
     """Convert miRNAs and Get permuted p-values for 3' UTR motifs"""
 
     pssms = c1.pssms_3putr()
@@ -1343,6 +1349,7 @@ def __convert_mirvestigator_3putr_results():
         pssms[pssm1].setPermutedPValue({'pValue':pValue,'pValue_all':pValue_all})
     print 'Done.\n'
 
+
 def run_replication(rep_script):
     ## TODO:
     ## these R scripts are external to the project and therefore
@@ -1356,7 +1363,8 @@ def run_replication(rep_script):
     if ret == 1:
         raise Exception('could not run replication - check dependencies')
 
-def __make_replication_pvalues():
+
+def __make_replication_pvalues(c1):
     # Dump a file containing all the genes for each cluster
     with open('output/cluster.members.genes.txt','w') as cmgFile:
         writeMe = []
@@ -1370,7 +1378,6 @@ def __make_replication_pvalues():
         for b1 in c1.biclusters:
             writeMe.append(str(b1)+' '+' '.join(c1.getBicluster(b1).conditions))
         cmcFile.write('\n'.join(writeMe))
-
 
     # Run replication on all datasets
     run_sets = [name for name in REPLICATION_DATASET_NAMES
@@ -1387,7 +1394,7 @@ def __make_replication_pvalues():
         pool.join()
 
 
-def __read_replication_pvalues():
+def __read_replication_pvalues(c1):
     # Read in replication p-values - French Dataset      
     # '','n.rows','overlap.rows','new.resid.norm.gbm','avg.norm.perm.resid.gbm','norm.perm.p.gbm','new.resid.norm.all','avg.norm.perm.resid.all','norm.perm.p.all','pc1.var.exp.gbm','avg.pc1.var.exp.gbm','pc1.perm.p.gbm','pc1.var.exp.all','avg.pc1.var.exp.all','pc1.perm.p.all','survival.gbm','survival.p.gbm','survival.age.gbm','survival.age.p.gbm','survival.all','survival.p.all','survival.age.all','survival.age.p.all'
     print 'Loading replication p-values...'
@@ -1428,7 +1435,8 @@ def __read_replication_pvalues():
     inFile.close()
     print 'Done.\n'
 
-def __make_permuted_pvalues():
+
+def __make_permuted_pvalues(c1):
     ###########################################################################
     ## Run permuted p-value for variance epxlained first principal component ##
     ###########################################################################
@@ -1459,7 +1467,7 @@ def __make_permuted_pvalues():
     print 'Done.\n'
 
 
-def __make_functional_enrichment_and_go_term_similarity():
+def __make_functional_enrichment_and_go_term_similarity(c1):
     #################################################################
     ## Run functional enrichment and GO term similarity            ##
     #################################################################
@@ -1497,7 +1505,7 @@ def __make_functional_enrichment_and_go_term_similarity():
     print 'Done.\n'
 
 
-def __add_hallmarks_of_cancer():    
+def __add_hallmarks_of_cancer(c1):
     print 'Load Jiang-Conrath semantic similarity to Hallmarks of Cancer...'
     with open('output/jiangConrath_hallmarks.csv','r') as inFile:
         hallmarks = [i for i in inFile.readline().split(',') if not i.strip('"')=='']
@@ -1508,7 +1516,8 @@ def __add_hallmarks_of_cancer():
             b1.add_attribute(key='hallmarksOfCancer',value=dict(zip(hallmarks,line[1:])))
         print 'Done.\n'
 
-def __write_final_cmonkey_object():
+
+def __write_final_cmonkey_object(c1):
     print 'Dumping Final cMonkey Object:'
     with open('output/c1_postProc.pkl','wb') as pklFile:
         cPickle.dump(c1, pklFile)
@@ -1523,18 +1532,19 @@ def perform_postprocessing(c1):
         __do_postprocess(POSTPROCESS_PKL_PATH, c1, ratios, phenotypes)
         __tomtom_upstream_motifs()
         tf_name2entrezid, tf_families = __expand_tf_factor_list()
-        exp_data, all_names = __correlate_tfs_with_cluster_eigengenes()
-        __expand_and_correlate_tfbsdb_tfs(tf_name2entrezid, tf_families, exp_data, all_names)
-        __write_first_principal_components()
-        __get_permuted_pvalues_for_upstream_meme_motifs()
-        __run_mirvestigator_3putr()
-        __convert_mirvestigator_3putr_results()
-        __make_replication_pvalues()
-        __read_replication_pvalues()
-        __make_permuted_pvalues()
-        __make_functional_enrichment_and_go_term_similarity()
-        __add_hallmarks_of_cancer()
-        __write_final_cmonkey_object()
+        exp_data, all_names = __correlate_tfs_with_cluster_eigengenes(c1)
+        __expand_and_correlate_tfbsdb_tfs(c1, tf_name2entrezid, tf_families,
+                                          exp_data, all_names)
+        __write_first_principal_components(c1)
+        __get_permuted_pvalues_for_upstream_meme_motifs(c1)
+        __run_mirvestigator_3putr(c1)
+        __convert_mirvestigator_3putr_results(c1)
+        __make_replication_pvalues(c1)
+        __read_replication_pvalues(c1)
+        __make_permuted_pvalues(c1)
+        __make_functional_enrichment_and_go_term_similarity(c1)
+        __add_hallmarks_of_cancer(c1)
+        __write_final_cmonkey_object(c1)
 
     else:
         print 'Loading from precached cMonkey Object:'
@@ -1555,6 +1565,7 @@ def run_neo():
         if ret == 1:
             raise Exception('could not run causality analyses')
 
+
 def write_neo_summary():
     ## Pull together analysis into cohesive output
     causalSummary = []
@@ -1572,7 +1583,8 @@ def write_neo_summary():
                             if not inLine:
                                 break
                             splitUp = inLine.strip().split(',')
-                            if float(splitUp[6]) >= leo_nb_AtoB and float(splitUp[12]) <= mlogp_M_AtoB:
+                            if (float(splitUp[6]) > LEO_NB_ATOB and
+                                float(splitUp[12]) <= MLOGP_M_ATOB):
                                 # Somatic Mutation(1), Regulator(3), Biclster(5), leo.nb.AtoB(6), mlogp.M.AtoB(12), PathAB(17), SEPathAB(18), ZPathAB(19), PPathAB(20), BLV.AtoB(25), RMSEA.AtoB(28)
                                 causalSummary.append({'Mutation': splitUp[1].strip('"').lstrip('M:'), 'Regulator': splitUp[3].strip('"').lstrip('A:'), 'Bicluster': splitUp[5].strip('"').lstrip('B:bic_'), 'leo.nb.AtoB': splitUp[6], 'mlogp.M.AtoB': splitUp[12], 'PathAB': splitUp[17], 'SEPathAB': splitUp[18], 'ZPathAB': splitUp[19], 'PPathAB': splitUp[20], 'BLV.AtoB': splitUp[25], 'RMSEA.AtoB': splitUp[28]})
 
@@ -1593,15 +1605,16 @@ def add_correspondent_regulators(c1, causal_summary):
         tfs = []
         # 1. MEME and WEEDER Upstream motifs
         for pssm in b1.pssms_upstream:
-            for subset in subsets:
+            for subset in SUBSETS:
                 matches = pssm.getCorrelatedMatches(subset)
                 if matches:
                     for corTf in matches:
-                        if corTf['pValue']<=pVCut and abs(corTf['rho'])>=rhoCut:
+                        if (corTf['pValue'] <= PVALUE_CUT and
+                            abs(corTf['rho']) >= RHO_CUT):
                             tfs.append(corTf['factor'])
             # 2. TFBS_DB
             for corTf in b1.attributes['tfbs_db_correlated'][subset]:
-                if corTf['pValue']<=pVCut and abs(corTf['rho'])>=rhoCut:
+                if corTf['pValue'] <= PVALUE_CUT and abs(corTf['rho']) >= RHO_CUT:
                     tfs.append(corTf['factor'])
         # 3. Find Correspondent TF regulators
         if causalFlow['Regulator'] in tfs:
@@ -1619,10 +1632,12 @@ def add_correspondent_regulators(c1, causal_summary):
                     if miR['confidence'] in ['8mer','7mer_a1','7mer_m8']:
                         miRNAs += miRNAIDs_rev[miR['factor']]
         # 2. PITA (not correlated)
-        if float(b1.attributes['pita_3pUTR']['pValue'])<=pVCut and float(b1.attributes['pita_3pUTR']['percentTargets'].split(' ')[0])>=percTargets:
+        if (float(b1.attributes['pita_3pUTR']['pValue']) <= PVALUE_CUT and
+            float(b1.attributes['pita_3pUTR']['percentTargets'].split(' ')[0]) >= PERC_TARGETS):
             miRNAs += b1.attributes['pita_3pUTR']['miRNA'].split(' ')
         # 3. TargetScan (not correlated)
-        if float(b1.attributes['targetscan_3pUTR']['pValue'])<=pVCut and float(b1.attributes['targetscan_3pUTR']['percentTargets'].split(' ')[0])>=percTargets:
+        if (float(b1.attributes['targetscan_3pUTR']['pValue']) <= PVALUE_CUT and
+            float(b1.attributes['targetscan_3pUTR']['percentTargets'].split(' ')[0]) >= PERC_TARGETS):
             miRNAs += b1.attributes['targetscan_3pUTR']['miRNA'].split(' ')
         # 4. Find Correspondent miRNA regulators
         for miR in miRNAs:
@@ -1679,7 +1694,7 @@ def write_final_result(c1):
                 correlatedMatches = {}
                 originalExpanded = {}
                 minCorrelated = {}
-                for subset in subsets:
+                for subset in SUBSETS:
                     correlatedMatches[subset] = 'NA'
                     originalExpanded[subset] = 'NA'
                     minCorrelated[subset] = 'NA'
@@ -1695,11 +1710,12 @@ def write_final_result(c1):
                                 expandedMatches[i['seedFactor']] = []
                             expandedMatches[i['seedFactor']].append(i['factor'])
                         expandedMatches = ' '.join([seedFactor+':'+';'.join(expandedMatches[seedFactor]) for seedFactor in expandedMatches])
-                    for subset in subsets:
+                    for subset in SUBSETS:
                         tmp = pssm1.getCorrelatedMatches(subset)
                         if not tmp==None:
                             for match1 in tmp:
-                                if match1['pValue']<=pVCut and abs(match1['rho'])>=rhoCut:
+                                if (match1['pValue'] <= PVALUE_CUT and
+                                    abs(match1['rho']) >= RHO_CUT):
                                     if correlatedMatches[subset]=='NA':
                                         correlatedMatches[subset] = []
                                     correlatedMatches[subset].append(match1['factor']+':'+str(match1['rho'])+':'+str(match1['pValue']))
@@ -1718,14 +1734,14 @@ def write_final_result(c1):
                             pssm1.getConsensusMotif(), # Motif consensus sequence
                             matches, # Matches to the motif from TransFac and Jaspar
                             expandedMatches] # Expanded matches usign TFClass
-                            + [correlatedMatches[subset]+','+originalExpanded[subset]+','+minCorrelated[subset] for subset in subsets])
+                            + [correlatedMatches[subset]+','+originalExpanded[subset]+','+minCorrelated[subset] for subset in SUBSETS])
             else:
                 writeMe += (['NA', # E-value
                             'NA', # Permuted p-value for motif
                             'NA', # Motif consensus sequence
                             'NA', # Matches to the motif from TransFac and Jaspar
                             'NA'] # Expanded matches using TFClass
-                            + ['NA,NA,NA' for subset in subsets])
+                            + ['NA,NA,NA' for subset in SUBSETS])
         #   - WEEDER motifs
         for weeder1 in ['weeder_motif1','weeder_motif2']:
             if not upstreamMotifs[weeder1]==None:
@@ -1736,7 +1752,7 @@ def write_final_result(c1):
                 correlatedMatches = {}
                 originalExpanded = {}
                 minCorrelated = {}
-                for subset in subsets:
+                for subset in SUBSETS:
                     correlatedMatches[subset] = 'NA'
                     originalExpanded[subset] = 'NA'
                     minCorrelated[subset] = 'NA'
@@ -1752,11 +1768,12 @@ def write_final_result(c1):
                                 expandedMatches[i['seedFactor']] = []
                             expandedMatches[i['seedFactor']].append(i['factor'])
                         expandedMatches = ' '.join([seedFactor+':'+';'.join(expandedMatches[seedFactor]) for seedFactor in expandedMatches])
-                    for subset in subsets:
+                    for subset in SUBSETS:
                         tmp = pssm1.getCorrelatedMatches(subset)
                         if not tmp==None:
                             for match1 in tmp:
-                                if match1['pValue']<=pVCut and abs(match1['rho'])>=rhoCut:
+                                if (match1['pValue'] <= PVALUE_CUT and
+                                    abs(match1['rho']) >= RHO_CUT):
                                     if correlatedMatches[subset]=='NA':
                                         correlatedMatches[subset] = []
                                     correlatedMatches[subset].append(match1['factor']+':'+str(match1['rho'])+':'+str(match1['pValue']))
@@ -1775,14 +1792,14 @@ def write_final_result(c1):
                             pssm1.getConsensusMotif(), # Motif consensus sequence
                             matches, # Matches to the motif from TransFac and Jaspar
                             expandedMatches] # Expanded matches usign TFClass
-                            + [correlatedMatches[subset]+','+originalExpanded[subset]+','+minCorrelated[subset] for subset in subsets])
+                            + [correlatedMatches[subset]+','+originalExpanded[subset]+','+minCorrelated[subset] for subset in SUBSETS])
             else:
                 writeMe += (['NA', # E-value
                             #'NA', # Permuted p-value for motif
                             'NA', # Motif consensus sequence
                             'NA', # Matches to the motif from TransFac and Jaspar
                             'NA'] # Expanded matches using TFClass
-                            + ['NA,NA,NA' for subset in subsets])
+                            + ['NA,NA,NA' for subset in SUBSETS])
         #   c. Enriched TFs:  TFBS_DB.TFs,TFBS_DB.percTargets,TFBS_DB.pValue
         for association in ['tfbs_db']:
             a1 = b1.attributes[association]
@@ -1791,7 +1808,7 @@ def write_final_result(c1):
                 correlatedMatches = {}
                 originalExpanded = {}
                 minCorrelated = {}
-                for subset in subsets:
+                for subset in SUBSETS:
                     correlatedMatches[subset] = 'NA'
                     originalExpanded[subset] = 'NA'
                     minCorrelated[subset] = 'NA'
@@ -1799,10 +1816,11 @@ def write_final_result(c1):
                 if not tmp is None:
                     expandedMatches = ' '.join([seedFactor+':'+';'.join(tmp[seedFactor]) for seedFactor in tmp])
                 tmp = b1.attributes['tfbs_db_correlated']
-                for subset in subsets:
+                for subset in SUBSETS:
                     if not tmp[subset] is None:
                         for match1 in tmp[subset]:
-                            if match1['pValue']<=pVCut and abs(match1['rho'])>=rhoCut:
+                            if (match1['pValue'] <= PVALUE_CUT and
+                                abs(match1['rho']) >= RHO_CUT):
                                 if correlatedMatches[subset]=='NA':
                                     correlatedMatches[subset] = []
                                 correlatedMatches[subset].append(match1['factor']+':'+str(match1['rho'])+':'+str(match1['pValue']))
@@ -1821,9 +1839,9 @@ def write_final_result(c1):
                 writeMe += [str(a1['tf']).replace(';',' '),
                             str(a1['percentTargets']).replace(';',' '),
                             str(a1['pValue']),
-                            expandedMatches] + [correlatedMatches[subset] + ',' + originalExpanded[subset] + ',' + minCorrelated[subset] for subset in subsets]
+                            expandedMatches] + [correlatedMatches[subset] + ',' + originalExpanded[subset] + ',' + minCorrelated[subset] for subset in SUBSETS]
             else:
-                writeMe += (['NA','NA','NA','NA'] + ['NA,NA,NA' for subset in subsets])
+                writeMe += (['NA','NA','NA','NA'] + ['NA,NA,NA' for subset in SUBSETS])
 
         #   d. 3' UTR motifs:  weeder.motif1.E, weeder.motif1.permPV, weeder.motif1.permPV_all, weeder.motif1.consensus, weeder.motif1.matches, weeder.motif1.model
         motifNames = b1.pssm_names_3putr()
@@ -1927,7 +1945,7 @@ def write_final_result(c1):
         # Add to the final output file
         postOut.append(deepcopy(writeMe))
 
-    with open('output/'+str(postProcessedFile),'w') as postFinal:
+    with open(os.path.join('output', POSTPROCESSED_FILENAME), 'w') as postFinal:
         header = ['Bicluster', 'Genes', 'Patients', 'Norm. Residual', 'Norm. Residual Perm. P-Value', 'Var. Exp. First PC', 'Var. Exp. First PC Perm. P-Value'] + \
          ['MEME Motif1 E-Value', 'MEME Motif1 Perm. P-Value', 'Up.MEME Motif1 Consensus', 'Up.MEME Motif1 Matches','Up.MEME Motif1 Expanded Matches', 'Up.MEME Motif1 Correlated Matches', 'Up.MEME Motif1 Original/Expanded', 'Up.MEME Motif1 Minimum Correlated'] + \
          ['Up.MEME Motif2 E-Value', 'Up.MEME Motif2 Perm. P-Value', 'Up.MEME Motif2 Consensus', 'Up.MEME Motif2 Matches', 'Up.MEME Motif2 Expanded Matches', 'Up.MEME Motif2 Correlated Matches', 'Up.MEME Motif2 Original/Expanded', 'Up.MEME Motif2 Minimum Correlated'] + \
@@ -1948,6 +1966,7 @@ def write_final_result(c1):
         postFinal.write(','.join(header)+'\n'+'\n'.join([','.join(i) for i in postOut]))
 
     print 'Done.\n'
+
 
 if __name__ == '__main__':
     # Initialize sygnal output directory and conversion dictionaries
