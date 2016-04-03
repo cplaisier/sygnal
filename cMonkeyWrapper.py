@@ -136,12 +136,12 @@ class cMonkeyWrapper:
             if biOk:
                 tmpPssms = self.biclusters[bi].pssms_upstream
                 for pssm in tmpPssms:
-                    if de_novo_method == 'NA' or de_novo_method == pssm.getMethod():
+                    if de_novo_method == 'NA' or de_novo_method == pssm.de_novo_method:
                         # Only add it if it is less than an E-Value threshold
                         if (maxEValue == 'NA' or
-                            float(pssm.getEValue()) <= float(maxEValue)):
+                            float(pssm.eValue) <= float(maxEValue)):
                             pssms.append(pssm)
-                            pssmsNames.append(pssm.getName())
+                            pssmsNames.append(pssm.name)
         return dict(zip(pssmsNames, pssms))
 
     # Get all 3' UTR pssms
@@ -160,10 +160,10 @@ class cMonkeyWrapper:
                 tmpPssms = self.biclusters[bi].pssms_3putr
                 for pssm in tmpPssms:
                     # Only add it if it is less than an E-Value threshold
-                    if de_novo_method == 'NA' or de_novo_method == pssm.getMethod():
-                        if maxEValue == 'NA' or float(pssm.getEValue()) <= float(maxEValue):
+                    if de_novo_method == 'NA' or de_novo_method == pssm.de_novo_method:
+                        if maxEValue == 'NA' or float(pssm.eValue) <= float(maxEValue):
                             pssms.append(pssm)
-                            pssmsNames.append(pssm.getName())
+                            pssmsNames.append(pssm.name)
         return dict(zip(pssmsNames,pssms))
 
     def bicluster_seqs_upstream(self, k):

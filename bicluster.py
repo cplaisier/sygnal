@@ -107,21 +107,21 @@ class Bicluster:
     # Returns a list of the upstream pssms for this biclutster
     def pssm_upstream(self, name):
         for i in self.pssms_upstream:
-            if i.getName() == name:
+            if i.name == name:
                 return i
         return 'No such PSSM with that name!'
 
     def pssm_3putr(self, name):
         for i in self.pssms_3putr:
-            if i.getName() == name:
+            if i.name == name:
                 return i
         return 'No such PSSM with that name!'
 
     def pssm_names_upstream(self):
-        return [pssm.getName() for pssm in self.pssms_upstream]
+        return [pssm.name for pssm in self.pssms_upstream]
 
     def pssm_names_3putr(self):
-        return [pssm.getName() for pssm in self.pssms_3putr]
+        return [pssm.name for pssm in self.pssms_3putr]
 
     # Adds a PSSM to a bicluster
     def add_pssm_upstream(self, pssm):

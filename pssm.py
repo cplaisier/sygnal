@@ -37,41 +37,8 @@ class pssm:
         self.matrix = matrix
         self.genes = genes
 
-    # Returns the name of the PSSM
-    def getName(self):
-        return self.name
-
-    # Sets the name of the PSSM
-    def setName(self,name):
-        self.name = name
-
-    # Returns the name of the PSSM
-    def getMethod(self):
-        return self.de_novo_method
-    
-    # Returns the name of the PSSM
-    def setMethod(self, de_novo_method):
-        self.de_novo_method = de_novo_method
-
-    # Returns the E-value of the PSSM
-    def getEValue(self):
-        return self.eValue
-
-    # Returns the number of sites for the PSSM
-    def getNSites(self):
-        return self.nsites
-
-    # Returns the number of genes of the PSSM
-    def getNumGenes(self):
+    def num_genes(self):
         return len(self.genes)
-
-    # Returns the genes of the PSSM
-    def getGenes(self):
-        return self.genes
-
-    # Returns the matrix
-    def getMatrix(self):
-        return self.matrix
 
     # Pads the meme nucleotide frequencies with zeros
     def padMe(self,str1):
