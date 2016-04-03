@@ -35,6 +35,7 @@ from rpy2 import rinterface
 # Custom offYerBack libraries
 from cMonkeyWrapper import cMonkeyWrapper
 from pssm import pssm
+import pssm as pssm_mod
 from miRvestigator import miRvestigator
 import utils
 from sys import stdout, exit
@@ -1017,7 +1018,7 @@ def __tomtom_upstream_motifs():
     # Pump into pssms
     for pssmName in upstreamMatches:
         for match in upstreamMatches[pssmName]:
-            pssms[pssmName].addMatch(factor=match['factor'], confidence=match['confidence'])
+            pssms[pssmName].add_match(factor=match['factor'], confidence=match['confidence'])
     print 'We matched '+str(len(upstreamMatches))+' upstream motifs.\n'
 
 
@@ -1053,7 +1054,7 @@ def __expand_tf_factor_list(entrez2id):
     pssms = c1.pssms_upstream()
     for pssm in pssms:
         expanded_factors = {}
-        matches = pssms[pssm].getMatches()
+        matches = pssms[pssm].get_matches()
         # Collapse matches to a set of entrez IDs and add expanded factors
         if not matches==None:
             for match in matches:
@@ -1067,7 +1068,7 @@ def __expand_tf_factor_list(entrez2id):
             # Push expanded TF factor list into the PSSM object
             for factor in expanded_factors:
                 for expanded_factor in list(set(expanded_factors[factor])):
-                    pssms[pssm].addExpandedMatch(expanded_factor, factor)
+                    pssms[pssm].add_expanded_match(expanded_factor, factor)
     print 'Finished expanding TF factor list.\n'
     return tfName2entrezId, tfFamilies
 
@@ -1090,7 +1091,7 @@ def __correlate_tfs_with_cluster_eigengenes(c1):
     # [rho, pValue] = correlation(a1,a2)
     for cluster_num, bicluster in c1.biclusters.items():
         for pssm in bicluster.pssms_upstream:
-            factors = pssm.getExpandedMatches()
+            factors = pssm.get_expanded_matches()
             compared = defaultdict(list)
 
             # Get maximum amount of correlation positive or negative
@@ -1110,7 +1111,7 @@ def __correlate_tfs_with_cluster_eigengenes(c1):
                                     if corMax==[] or abs(cor1[0])>abs(corMax[0]):
                                         corMax = cor1
                         if not corMax==[]:
-                            pssm.addCorrelatedMatch(subset,factor['factor'],corMax[0],corMax[1])
+                            pssm.add_correlated_match(subset,factor['factor'],corMax[0],corMax[1])
     print 'Done.\n'
     return exp_data, all_names
 
@@ -1249,9 +1250,12 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
                     similar += 1
             # Write out the results
             mot = outputLine[0].split('_')[1]
-            permPValues[outputLine[0]] = { mot+'.consensus':str(pssms[outputLine[0]].getConsensusMotif()), mot+'.permutedEV<=10':str(len(pValues)), mot+'.similar':str(similar), mot+'.permPV':str(float(similar)/float(1000)) }
-            pssms[outputLine[0]].setPermutedPValue(str(float(similar)/float(1000)))
-            outFile.write('\n'+str(outputLine[0])+',upstream,'+str(pssms[outputLine[0]].eValue)+','+str(pssms[outputLine[0]].getConsensusMotif())+','+str(len(pValues))+','+str(similar)+','+str(1000)+','+str(float(similar)/float(1000)))
+            permPValues[outputLine[0]] = { mot + '.consensus': pssm_mod.consensus_motif(pssms[outputLine[0]]),
+                                           mot + '.permutedEV<=10': str(len(pValues)),
+                                           mot + '.similar':str(similar),
+                                           mot+'.permPV':str(float(similar)/float(1000)) }
+            pssms[outputLine[0]].set_permuted_pvalue(str(float(similar)/float(1000)))
+            outFile.write('\n'+str(outputLine[0])+',upstream,'+str(pssms[outputLine[0]].eValue)+',' + pssm_mod.consensus_motif(pssms[outputLine[0]]) + ',' + str(len(pValues)) + ',' + str(similar) + ',' + str(1000) + ',' + str(float(similar)/float(1000)))
         outFile.close()
     else:
         print 'Using precalculated upstream p-values...'
@@ -1260,7 +1264,7 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
         upPValues = [i.strip().split(',') for i in inFile.readlines()]
         inFile.close()
         for line in upPValues:
-            pssms[line[0]].setPermutedPValue(str(float(line[7])/float(1000)))
+            pssms[line[0]].set_permuted_pvalue(str(float(line[7])/float(1000)))
     print 'Done.\n'
 
 
@@ -1301,7 +1305,7 @@ def __convert_mirvestigator_3putr_results(c1, mirna_ids):
                     miRNA_mature_seq_ids += utils.mirna_in_dict(i.lower(), mirna_ids)
                 miRNA_matches[line[0]] = {'miRNA':line[1],'model':line[2],'mature_seq_ids':miRNA_mature_seq_ids}
                 for m1 in miRNA_mature_seq_ids:
-                    pssms[line[0]].addMatch(factor=m1, confidence=line[2])
+                    pssms[line[0]].add_match(factor=m1, confidence=line[2])
         with open('output/miRvestigatorResults.pkl','wb') as pklFile:
             cPickle.dump(miRNA_matches, pklFile)
     else:
@@ -1310,7 +1314,7 @@ def __convert_mirvestigator_3putr_results(c1, mirna_ids):
             for m1 in miRNA_matches:
                 for m2 in miRNA_matches[m1]['mature_seq_ids']:
                     #print m1, m2, miRNA_matches
-                    pssms[m1].addMatch(factor=m2, confidence=miRNA_matches[m1]['model'])
+                    pssms[m1].add_match(factor=m2, confidence=miRNA_matches[m1]['model'])
 
     # Compile results to put them into the postProcessed
     print 'Get perumted p-values for 3\' UTR motifs...'
@@ -1323,7 +1327,7 @@ def __convert_mirvestigator_3putr_results(c1, mirna_ids):
     clustSizes = sorted(weederRand['8bp'].keys())
     for pssm1 in pssms:
         seqNum = pssms[pssm1].num_genes()
-        consensus = pssms[pssm1].getConsensusMotif()
+        consensus = pssm_mod.consensus_motif(pssms[pssm1])
         width = len(consensus)
         splitUp = pssm1.split('_')
         clustInd = 5
@@ -1332,7 +1336,7 @@ def __convert_mirvestigator_3putr_results(c1, mirna_ids):
                 clustInd = c
         pValue = float(sum(1 for i in weederRand[str(width)+'bp'][clustInd] if float(i) >= float(pssms[pssm1].eValue)))/float(len(weederRand[str(width)+'bp'][clustInd]))
         pValue_all = float(sum(1 for i in weederRand_all[str(width)+'bp'][clustInd] if float(i) >= float(pssms[pssm1].eValue)))/float(len(weederRand_all[str(width)+'bp'][clustInd]))
-        pssms[pssm1].setPermutedPValue({'pValue':pValue,'pValue_all':pValue_all})
+        pssms[pssm1].set_permuted_pvalue({'pValue':pValue,'pValue_all':pValue_all})
     print 'Done.\n'
 
 
@@ -1592,7 +1596,7 @@ def add_correspondent_regulators(c1, causal_summary, mirna_ids_rev):
         # 1. MEME and WEEDER Upstream motifs
         for pssm in bicluster.pssms_upstream:
             for subset in SUBSETS:
-                matches = pssm.getCorrelatedMatches(subset)
+                matches = pssm.get_correlated_matches(subset)
                 if matches:
                     for corTf in matches:
                         if (corTf['pValue'] <= PVALUE_CUT and
@@ -1612,7 +1616,7 @@ def add_correspondent_regulators(c1, causal_summary, mirna_ids_rev):
         miRNAs = []
         # 1. WEEDER 3'UTR
         for pssm in bicluster.pssms_3putr:
-            matches = pssm.getMatches()
+            matches = pssm.get_matches()
             if matches:
                 for miR in matches:
                     if miR['confidence'] in ['8mer','7mer_a1','7mer_m8']:
@@ -1684,10 +1688,10 @@ def write_final_result(c1, mirna_ids_rev):
                     correlatedMatches[subset] = 'NA'
                     originalExpanded[subset] = 'NA'
                     minCorrelated[subset] = 'NA'
-                if not pssm1.getMatches()==None:
-                    matches = ' '.join([match1['factor'] for match1 in pssm1.getMatches()])
-                    tmp = pssm1.getExpandedMatches()
-                    if not tmp==None:
+                if not pssm1.get_matches() is None:
+                    matches = ' '.join([match1['factor'] for match1 in pssm1.get_matches()])
+                    tmp = pssm1.get_expanded_matches()
+                    if not tmp is None:
                         expandedMatches = {}
                         for i in tmp:
                             if not i['seedFactor'] in original:
@@ -1697,7 +1701,7 @@ def write_final_result(c1, mirna_ids_rev):
                             expandedMatches[i['seedFactor']].append(i['factor'])
                         expandedMatches = ' '.join([seedFactor+':'+';'.join(expandedMatches[seedFactor]) for seedFactor in expandedMatches])
                     for subset in SUBSETS:
-                        tmp = pssm1.getCorrelatedMatches(subset)
+                        tmp = pssm1.get_correlated_matches(subset)
                         if not tmp==None:
                             for match1 in tmp:
                                 if (match1['pValue'] <= PVALUE_CUT and
@@ -1715,11 +1719,11 @@ def write_final_result(c1, mirna_ids_rev):
                                 else:
                                     originalExpanded[subset] = 'Expanded'
                                 minCorrelated[subset] = minCorrelated[subset]['factor']+':'+str(minCorrelated[subset]['rho'])+':'+str(minCorrelated[subset]['pValue'])
-                writeMe += ([str(pssm1.eValue), # E-value
-                            str(pssm1.getPermutedPValue()), # Permuted p-value for motif
-                            pssm1.getConsensusMotif(), # Motif consensus sequence
-                            matches, # Matches to the motif from TransFac and Jaspar
-                            expandedMatches] # Expanded matches usign TFClass
+                writeMe += ([str(pssm1.eValue),
+                             str(pssm1.get_permuted_pvalue()),
+                             pssm_mod.consensus_motif(pssm1),
+                             matches,  # motif natches from TransFac and Jaspar
+                             expandedMatches]  # Expanded matches (TFClass)
                             + [correlatedMatches[subset]+','+originalExpanded[subset]+','+minCorrelated[subset] for subset in SUBSETS])
             else:
                 writeMe += (['NA', # E-value
@@ -1742,10 +1746,10 @@ def write_final_result(c1, mirna_ids_rev):
                     correlatedMatches[subset] = 'NA'
                     originalExpanded[subset] = 'NA'
                     minCorrelated[subset] = 'NA'
-                if not pssm1.getMatches()==None:
-                    matches = ' '.join([match1['factor'] for match1 in pssm1.getMatches()])
-                    tmp = pssm1.getExpandedMatches()
-                    if not tmp==None:
+                if not pssm1.get_matches() is None:
+                    matches = ' '.join([match1['factor'] for match1 in pssm1.get_matches()])
+                    tmp = pssm1.get_expanded_matches()
+                    if not tmp is None:
                         expandedMatches = {}
                         for i in tmp:
                             if not i['seedFactor'] in original:
@@ -1755,8 +1759,8 @@ def write_final_result(c1, mirna_ids_rev):
                             expandedMatches[i['seedFactor']].append(i['factor'])
                         expandedMatches = ' '.join([seedFactor+':'+';'.join(expandedMatches[seedFactor]) for seedFactor in expandedMatches])
                     for subset in SUBSETS:
-                        tmp = pssm1.getCorrelatedMatches(subset)
-                        if not tmp==None:
+                        tmp = pssm1.get_correlated_matches(subset)
+                        if not tmp is None:
                             for match1 in tmp:
                                 if (match1['pValue'] <= PVALUE_CUT and
                                     abs(match1['rho']) >= RHO_CUT):
@@ -1773,18 +1777,16 @@ def write_final_result(c1, mirna_ids_rev):
                                 else:
                                     originalExpanded[subset] = 'Expanded'
                                 minCorrelated[subset] = minCorrelated[subset]['factor']+':'+str(minCorrelated[subset]['rho'])+':'+str(minCorrelated[subset]['pValue'])
-                writeMe += ([str(pssm1.eValue), # E-value
-                            #str(pssm1.getPermutedPValue()), # Permuted p-value for motif
-                            pssm1.getConsensusMotif(), # Motif consensus sequence
-                            matches, # Matches to the motif from TransFac and Jaspar
-                            expandedMatches] # Expanded matches usign TFClass
+                writeMe += ([str(pssm1.eValue),
+                             pssm_mod.consensus_motif(pssm1),
+                             matches,  # motif matches (TransFac and Jaspar)
+                             expandedMatches]  # Expanded matches (TFClass)
                             + [correlatedMatches[subset]+','+originalExpanded[subset]+','+minCorrelated[subset] for subset in SUBSETS])
             else:
                 writeMe += (['NA', # E-value
-                            #'NA', # Permuted p-value for motif
-                            'NA', # Motif consensus sequence
-                            'NA', # Matches to the motif from TransFac and Jaspar
-                            'NA'] # Expanded matches using TFClass
+                             'NA', # Motif consensus sequence
+                             'NA', # Matches to the motif from TransFac and Jaspar
+                             'NA'] # Expanded matches using TFClass
                             + ['NA,NA,NA' for subset in SUBSETS])
         #   c. Enriched TFs:  TFBS_DB.TFs,TFBS_DB.percTargets,TFBS_DB.pValue
         for association in ['tfbs_db']:
@@ -1844,16 +1846,16 @@ def write_final_result(c1, mirna_ids_rev):
                 pssm1 = bicluster.pssm_3putr(p3utrMotifs[weeder1])
                 matches = 'NA'
                 model = 'NA'
-                if not pssm1.getMatches()==None:
-                    matches = ' '.join([mirna_ids_rev[match1['factor']] for match1 in pssm1.getMatches()])
-                    model = pssm1.getMatches()[0]['confidence']
+                if not pssm1.get_matches() is None:
+                    matches = ' '.join([mirna_ids_rev[match1['factor']] for match1 in pssm1.get_matches()])
+                    model = pssm1.get_matches()[0]['confidence']
                 permutedPValue = 'NA'
-                if not pssm1.getPermutedPValue()==None:
-                    permutedPValue = pssm1.getPermutedPValue()
+                if not pssm1.get_permuted_pvalue() is None:
+                    permutedPValue = pssm1.get_permuted_pvalue()
                 writeMe += [str(pssm1.eValue), # E-value
                             str(permutedPValue['pValue']), # Permuted p-value for motif
                             str(permutedPValue['pValue_all']), # Permuted p-value for motif (all)
-                            pssm1.getConsensusMotif(), # Motif consensus sequence
+                            pssm_mod.consensus_motif(pssm1),
                             matches, # Matches to the motif to miRBase
                             model] # Model fit by miRvestigator
             else:
@@ -1965,4 +1967,3 @@ if __name__ == '__main__':
     causal_summary = write_neo_summary()
     add_correspondent_regulators(c1, causal_summary, mirna_ids_rev)
     write_final_result(c1, mirna_ids_rev)
-

@@ -18,6 +18,7 @@
 #################################################################
 
 import re
+import pssm
 
 
 def mirna_in_dict(mirna, mirna_ids):
@@ -84,10 +85,9 @@ def make_files(nuc_freqs, query_pssms, target_pssms, num, strands='+ -'):
     # Make query PSSM file
     with open('tmp/query%d.tomtom' % num, 'w') as query_file:
         query_file.write(meme_header)
-        query_file.write('\n\n'.join([pssm1.getMemeFormatted() for pssm1 in query_pssms]))
+        query_file.write('\n\n'.join([pssm.to_meme_str(p) for p in query_pssms]))
 
     # Make target PSSM file
     with open('tmp/target%d.tomtom' % num,'w') as target_file:
         target_file.write(meme_header)
-        target_file.write('\n\n'.join([pssm1.getMemeFormatted() for pssm1 in target_pssms]))
-
+        target_file.write('\n\n'.join([pssm.to_meme_str(p) for p in target_pssms]))

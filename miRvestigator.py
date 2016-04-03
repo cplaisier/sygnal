@@ -20,25 +20,12 @@
 from copy import deepcopy
 from sys import stdout
 import os, cPickle
+import pssm as pssm_mod
 
-# A class designed to compute and hold the information from analyzing
-# miRNA seeds against motifs from 3' UTRs.
-#
-# Variables:
-# miRNAver - version of miRBase.org used.
-# miRNAs - list of miRNAs where each entry is unique, and names are appened for overlapping seeds.
-# permKMers - list of possible Kmers given the seed length.
-# 
-# 
-# Functions:
-# addSorted(curList,newItem) - adds an entry into miRNAScores[pssm] so that the list is sorted in the end. Ties are possible and not handled at this level.
-# allKmers(length) - creates a list of all possible Kmers given a specific length and alphabet.
-# setMiRNAs(seedStart,seedEnd) - gets miRNAs from miRBase.org from the latest release.
-# getTopHit(pssm.getName()) - gets top hit for a PSSM.
-# getScoreList(pssm.getName()) - returns scores for all miRNA seeds for given PSSM, sorted of course.
-#
+
 class miRvestigator:
-    # Initialize and start the run
+    """A class designed to compute and hold the information from analyzing
+    miRNA seeds against motifs from 3' UTRs."""
     def __init__(self, pssms, seqs3pUTR, seedModel=[6, 7, 8], minor=True,
                  p5=True, p3=True, textOut=True, wobble=True, wobbleCut=0.25,
                  baseDir='', outName='', species='hsa'):
@@ -118,7 +105,7 @@ class miRvestigator:
         outMe = []
         for pssm in pssms:
             print '\n%s' % pssm.name
-            print 'Building HMM model for '+str(pssm.getConsensusMotif())+'...'
+            print 'Building HMM model for ' + pssm_mod.consensus_motif(pssm) + '...'
             miRNAScores[pssm.name] = ['NA','NA']
             # Then setup the HMM
             ## States ##
@@ -209,7 +196,7 @@ class miRvestigator:
             #print sp, ep, tp
             print 'Done.\n'
 
-            print 'Starting miRNA detection for '+str(pssm.getConsensusMotif())+':'
+            print 'Starting miRNA detection for ' + pssm_mod.consensus_motif(pssm) + ':'
             # First try for perfect 8mer
             #  a. Do the Viterbi for all miRNAs
             vitMirnas = []
