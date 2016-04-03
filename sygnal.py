@@ -374,30 +374,33 @@ def sygnal_init():
         os.makedirs('output')
 
 
-def read_synonyms():
-    """ Load synonym thesaurus to get UCSC ID to Entrez ID"""
-    def is_number(s):
-        try:
-            float(s)
-            return True
-        except ValueError:
-            return False
+def is_number(s):
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
 
-    id2entrez = {}
-    entrez2id = {}
+
+def read_synonyms():
+    """ Load synonym thesaurus to get a mapping from entrez id to a list
+    of UCSC IDs.
+
+    The synonym file is assumed to be in the format
+    <UCSC ID>,<alt1>;<alt2>;...
+    and the Entrez ID is assumed to be the first numerical value in the
+    alternatives."""
+    entrez2id = defaultdict(list)
 
     with gzip.open(SYNONYM_PATH, 'r') as infile:
         for line in infile:
-            splitUp = line.strip().split(',')
-            id = splitUp[0]
-            entrez = [i for i in splitUp[1].split(';') if is_number(i)]
-            if len(entrez)==1:
-                id2entrez[id] = entrez[0]
-                if not entrez[0] in entrez2id:
-                    entrez2id[entrez[0]] = [id]
-                else:
-                    entrez2id[entrez[0]].append(id)
-    return id2entrez, entrez2id
+            row = line.strip().split(',')
+            id = row[0]
+            entrez = [i for i in row[1].split(';') if is_number(i)]
+            if len(entrez) == 1:
+                entrez2id[entrez[0]].append(id)
+
+    return entrez2id
 
 
 def miRNA_mappings():
@@ -638,7 +641,7 @@ def __bicluster_genes(c1):
     return result
 
 
-def __read_predictions(pred_path, pkl_path, genesInBiclusters, manager):
+def __read_predictions(pred_path, pkl_path, genes_in_biclusters, manager):
     if not os.path.exists(pkl_path):
         print 'loading predictions...'
         tmp_set = set()
@@ -647,7 +650,7 @@ def __read_predictions(pred_path, pkl_path, genesInBiclusters, manager):
             inLines = [i.strip().split(',') for i in infile.readlines() if i.strip()]
 
         for line in inLines:
-            if line[1] in genesInBiclusters:
+            if line[1] in genes_in_biclusters:
                 tmp_set.add(line[1])
                 if not line[0] in tmp_dict:
                     tmp_dict[line[0]] = []
@@ -678,11 +681,10 @@ def __compute_enrichment(c1, name,  pkl_path, pred_path, pred_pkl_path):
 
     if not os.path.exists(pkl_path):
         print 'Get a list of all genes in run...'
-        genesInBiclusters = __bicluster_genes(c1)
         mgr = Manager()
         g_biclusters = mgr.dict(c1.biclusters)
         g_pred_dict, g_pred_total_targets = __read_predictions(pred_path, pred_pkl_path,
-                                                               genesInBiclusters, mgr)
+                                                               __bicluster_genes(c1), mgr)
         print '%s prediction has %d TFs.' % (name, len(g_pred_dict))
 
         print 'Running %s enrichment analyses...' % name
@@ -1959,7 +1961,7 @@ def write_final_result(c1, mirna_ids_rev):
 if __name__ == '__main__':
     # Initialize sygnal output directory and conversion dictionaries
     sygnal_init()
-    id2entrez, entrez2id = read_synonyms()
+    entrez2id = read_synonyms()
     mirna_ids, mirna_ids_rev = miRNA_mappings()
     c1 = compute_additional_info(mirna_ids)
     c1 = perform_postprocessing(c1, entrez2id, mirna_ids)
