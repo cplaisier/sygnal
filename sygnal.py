@@ -464,7 +464,7 @@ def compute_upstream_motifs_meme(c1):
             # First make fasta files for all biclusters
             print 'Making Files for MEME Upstream run...'
             for b1 in c1.biclusters:
-                seqs = c1.getBiclusterSeqsUpstream(b1)
+                seqs = c1.bicluster_seqs_upstream(b1)
                 if len(seqs) > 0:
                     cluster_filename = 'tmp/meme/fasta/bicluster_%d.fasta' % b1
                     run_args.append((b1, cluster_filename))
@@ -568,7 +568,7 @@ def compute_upstream_motifs_weeder(c1):
         __compute_motifs_weeder('output/weeder_upstream.pkl',
                                 c1.biclusters,
                                 lambda bi, p: c1.biclusters[bi].add_pssm_upstream(p),
-                                lambda bi: c1.getBiclusterSeqsUpstream(bi),
+                                lambda bi: c1.bicluster_seqs_upstream(bi),
                                 {'bgfile': 'HS', 'size': 'small', 'enriched': 'T50',
                                  'revcomp': True})
         c1.weeder_upstream = True
@@ -579,7 +579,7 @@ def compute_3pUTR_weeder(c1):
         __compute_motifs_weeder('output/weeder_3pUTR.pkl',
                                 c1.biclusters,
                                 lambda bi, p: c1.biclusters[bi].add_pssm_3putr(p),
-                                lambda bi: c1.getBiclusterSeqs3pUTR(bi),
+                                lambda bi: c1.bicluster_seqs_3putr(bi),
                                 {'bgfile': 'HS3P', 'size': 'small', 'enriched': 'T50',
                                  'revcomp': False})
         c1.weeder_3pUTR = True
@@ -978,7 +978,7 @@ def __tomtom_upstream_motifs():
             # Making MEME formatted files (make_files function in utils)
             print 'Making files...'
             for i, target_pssms in enumerate(target_pssms_in):
-                utils.make_files(c1.getNucFreqsUpstream(), pssms.values(),
+                utils.make_files(c1.nucFreqsUpstream, pssms.values(),
                                  target_pssms.values(), i)
 
             # Run TomTom 
@@ -1230,7 +1230,7 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
         print '\nMaking files...'
         for i in range(len(pssms)):
             clustSize = utils.rand_pssm_clust_size(c1.biclusters[int(pssmsNames[i].split('_')[0])].num_genes())
-            utils.make_files(c1.getNucFreqsUpstream(), [pssms[pssmsNames[i]]],
+            utils.make_files(c1.nucFreqsUpstream, [pssms[pssmsNames[i]]],
                              randPssmsDict[clustSize].values(), i)
 
         # Run this using all cores available
@@ -1282,8 +1282,10 @@ def __run_mirvestigator_3putr(c1):
     if not os.path.exists('output/m2m.pkl'):
         print 'Computing miRNA matches...'
         pssms = c1.pssms_3putr()
-        seqs3pUTR = c1.getSeqs3pUTR().values()
-        m2m = miRvestigator(pssms.values(),seqs3pUTR,seedModel=[6,7,8],minor=True,p5=True,p3=True,wobble=False,wobbleCut=0.25,baseDir='output',species='mmu')
+        seqs3pUTR = c1.seqs3pUTR.values()
+        m2m = miRvestigator(pssms.values(), seqs3pUTR, seedModel=[6, 7, 8],
+                            minor=True, p5=True, p3=True, wobble=False,
+                            wobbleCut=0.25, baseDir='output', species='mmu')
         with open('output/m2m.pkl','wb') as pklFile:
             cPickle.dump(m2m,pklFile)
     else:

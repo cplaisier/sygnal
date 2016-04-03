@@ -39,11 +39,14 @@ import os, cPickle
 #
 class miRvestigator:
     # Initialize and start the run
-    def __init__(self,pssms,seqs3pUTR,seedModel=[6,7,8], minor=True, p5=True, p3=True, textOut=True, wobble=True, wobbleCut=0.25,baseDir='',outName='',species='hsa'):
+    def __init__(self, pssms, seqs3pUTR, seedModel=[6, 7, 8], minor=True,
+                 p5=True, p3=True, textOut=True, wobble=True, wobbleCut=0.25,
+                 baseDir='', outName='', species='hsa'):
         print '\nmiRvestigator analysis started...'
         self.pssms = pssms
         self.species = species
         self.miRNAs = self.setMiRNAs(0,8,minor,p5,p3)
+
         # Trim sequences down
         self.miRNAs_6mer_1 = self.trimSeqs(deepcopy(self.miRNAs),0,6)
         self.miRNAs_6mer_2 = self.trimSeqs(deepcopy(self.miRNAs),1,7)
@@ -52,10 +55,12 @@ class miRvestigator:
         self.miRNAs_7mer_a1 = self.trimSeqs(deepcopy(self.miRNAs),0,7)
         self.miRNAs_8mer = self.trimSeqs(deepcopy(self.miRNAs),0,8)
         p3utrSeqs = 'X'.join(seqs3pUTR)
+
 	if not baseDir=='':
             dirName = baseDir+'/miRNA'
 	else:
             dirName = 'miRNA'
+
         if not os.path.exists(dirName):
             os.mkdir(dirName) 
         if 6 in seedModel:
@@ -657,7 +662,8 @@ class miRvestigator:
                 seedAlign += '-'
                 aligned += '_'
                 motifAlign += i
-        output += [start,start+lenMatch-1,lenMatch,compModel,"'"+motifAlign,"'"+aligned,"'"+seedAlign]
+        output += [start, start + lenMatch - 1, lenMatch, compModel,
+                   "'" + motifAlign, "'" + aligned, "'" + seedAlign]
         # P(Alignment)
-        output += [outMe[4][0],totP,outMe[4][2],vitP]
+        output += [outMe[4][0], totP, outMe[4][2], vitP]
         return [str(i) for i in output]
