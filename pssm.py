@@ -19,6 +19,7 @@
 
 from math import log
 from numpy import array, float64, log10
+import json
 
 
 class pssm:
@@ -38,30 +39,16 @@ class pssm:
         self.matrix = matrix
         self.genes = genes
 
+        self.expanded_matches = []
+
     def num_genes(self):
         return len(self.genes)
 
     def add_match(self, factor, confidence):
-        if not hasattr(self,'matches'):
-            self.matches = []
         self.matches.append({'factor':factor, 'confidence':confidence})
-
-    def get_matches(self):
-        if hasattr(self, 'matches') and not self.matches==[]:
-            return self.matches
-        else:
-            return None
     
     def add_expanded_match(self, factor, seedFactor):
-        if not hasattr(self,'expandedMatches'):
-            self.expandedMatches = []
-        self.expandedMatches.append({'factor':factor, 'seedFactor':seedFactor})
-
-    def get_expanded_matches(self):
-        if hasattr(self, 'expandedMatches') and not self.expandedMatches==[]:
-            return self.expandedMatches
-        else:
-            return None
+        self.expanded_matches.append({'factor':factor, 'seedFactor':seedFactor})
 
     def add_correlated_match(self, subset, factor, rho, pValue):
         if not hasattr(self,'correlatedMatches'):
@@ -156,3 +143,15 @@ def __col_consensus(matrix, i, lim1, lim2, three):
         if not pMax > lim2:
             conLet = 'N'
     return conLet
+
+
+def __make_pssm_json(pssm_json):
+    return pssm(pssm_json['name'], pssm_json['nsites'], pssm_json['evalue'],
+                pssm_json['matrix'], pssm_json['genes'])
+
+
+def load_pssms_json(path):
+    with open(path, 'r') as infile:
+        pssms_json = json.load(infile)
+        return {name: __make_pssm_json(pssm_json)
+                for name, pssm_json in pssms_json.items()}

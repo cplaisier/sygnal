@@ -94,6 +94,12 @@ CMONKEY2_RUNDB = '../out/cmonkey_run.db'
 REPLICATION_DATASET_NAMES = ['French','REMBRANDT','GSE7696']
 CM_PKL_PATH = 'output/c1_all.pkl'
 
+MOTIF_FILES = ['motifs/jasparCoreVertebrata_redundant.json',
+               'motifs/transfac_2012.1_PSSMs_vertabrate.json',
+               'motifs/uniprobePSSMsNonRedundant.json',
+               'motifs/selexPSSMsNonRedundant.json']
+
+
 CLUSTER_GENES_PATH = 'output/cluster.members.genes.txt'
 CLUSTER_CONDS_PATH = 'output/cluster.members.conditions.txt'
 CLUSTER_EIGENGENES_PATH = 'output/biclusterEigengenes.csv'
@@ -955,23 +961,18 @@ def __tomtom_upstream_motifs():
     pssms = c1.pssms_upstream()
     upstreamMatches = {}
 
-    motif_files = ['motifs/jasparCoreVertebrata_redundant.pkl',
-                   'motifs/transfac_2012.1_PSSMs_vertabrate.pkl',
-                   'motifs/uniprobePSSMsNonRedundant.pkl',
-                   'motifs/selexPSSMsNonRedundant.pkl']
     comparison_pkl_path = 'output/upstreamJasparTransfacComparison.pkl'
     comparison_csv_path = 'output/upstreamComparison_jaspar_transfac.csv'
 
-    # WW:
-    # we need to read the motif file regardless whether pkl_path exists
-    # or we get an exception in the else part
     target_pssms_in = []
-    for motif_file in motif_files:
-        with open(motif_file, 'rb') as pklFile:
-            pssms = cPickle.load(pklFile)
-            for pssm in pssms.values():
-                pssm.de_novo_method = 'meme'
-            target_pssms_in.append(pssms)
+    for motif_file in MOTIF_FILES:
+        #with open(motif_file, 'rb') as infile:
+        #pssms = cPickle.load(pklFile)
+        pssms = pssm_mod.load_pssms_json(motif_file)
+        print pssms.keys()
+        for pssm in pssms.values():
+            pssm.de_novo_method = 'meme'
+        target_pssms_in.append(pssms)
 
     if not os.path.exists(comparison_pkl_path):
 
@@ -1054,12 +1055,12 @@ def __expand_tf_factor_list(entrez2id):
 
     # Add expanded TF regulators
     pssms = c1.pssms_upstream()
-    for pssm in pssms:
+    for pssm in pssms.values():
         expanded_factors = {}
-        matches = pssms[pssm].get_matches()
+
         # Collapse matches to a set of entrez IDs and add expanded factors
-        if not matches==None:
-            for match in matches:
+        if len(pssm.matches) > 0:
+            for match in pssm.matches:
                 if match['factor'] in tfName2entrezId:
                     factor = tfName2entrezId[match['factor']]
                     if not factor in expanded_factors:
@@ -1070,7 +1071,7 @@ def __expand_tf_factor_list(entrez2id):
             # Push expanded TF factor list into the PSSM object
             for factor in expanded_factors:
                 for expanded_factor in list(set(expanded_factors[factor])):
-                    pssms[pssm].add_expanded_match(expanded_factor, factor)
+                    pssm.add_expanded_match(expanded_factor, factor)
     print 'Finished expanding TF factor list.\n'
     return tfName2entrezId, tfFamilies
 
@@ -1093,13 +1094,12 @@ def __correlate_tfs_with_cluster_eigengenes(c1):
     # [rho, pValue] = correlation(a1,a2)
     for cluster_num, bicluster in c1.biclusters.items():
         for pssm in bicluster.pssms_upstream:
-            factors = pssm.get_expanded_matches()
             compared = defaultdict(list)
 
             # Get maximum amount of correlation positive or negative
-            if not factors is None:
-                print cluster_num, pssm.name, len(factors)
-                for factor in factors:
+            if len(pssm.expanded_matches) > 0:
+                print cluster_num, pssm.name, len(pssm.expanded_matches)
+                for factor in pssm.expanded_matches:
                     for subset in SUBSETS:
                         corMax = []
                         if factor['factor'] in exp_data.keys():
@@ -1207,8 +1207,11 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
         for i in range(5, 70, 5):  # [5,10,15,... ,65]:
             stdout.write(str(i)+' ')
             stdout.flush()
-            pklFile = open(RAND_PSSMS_DIR + '/pssms_upstream_'+str(i)+'.pkl', 'rb')
-            randPssmsDict[i] = cPickle.load(pklFile)
+            filepath = os.path.join(RAND_PSSMS_DIR, 'pssms_upstream_%d.json' % i)
+            randPssmsDict[i] = pssm_mod.load_pssms_json(filepath)
+            #pklFile = open(RAND_PSSMS_DIR + '/pssms_upstream_'+str(i)+'.pkl', 'rb')
+            #randPssmsDict[i] = cPickle.load(pklFile)
+            
             for pssm1 in randPssmsDict[i]:
                 randPssmsDict[i][pssm1].de_novo_method = 'meme'
             delMes = []
@@ -1618,11 +1621,10 @@ def add_correspondent_regulators(c1, causal_summary, mirna_ids_rev):
         miRNAs = []
         # 1. WEEDER 3'UTR
         for pssm in bicluster.pssms_3putr:
-            matches = pssm.get_matches()
-            if matches:
-                for miR in matches:
-                    if miR['confidence'] in ['8mer','7mer_a1','7mer_m8']:
-                        miRNAs += mirna_ids_rev[miR['factor']]
+            for miR in pssm.matches:
+                if miR['confidence'] in ['8mer','7mer_a1','7mer_m8']:
+                    miRNAs += mirna_ids_rev[miR['factor']]
+
         # 2. PITA (not correlated)
         if (float(bicluster.attributes['pita_3pUTR']['pValue']) <= PVALUE_CUT and
             float(bicluster.attributes['pita_3pUTR']['percentTargets'].split(' ')[0]) >= PERC_TARGETS):
@@ -1690,12 +1692,11 @@ def write_final_result(c1, mirna_ids_rev):
                     correlatedMatches[subset] = 'NA'
                     originalExpanded[subset] = 'NA'
                     minCorrelated[subset] = 'NA'
-                if not pssm1.get_matches() is None:
-                    matches = ' '.join([match1['factor'] for match1 in pssm1.get_matches()])
-                    tmp = pssm1.get_expanded_matches()
-                    if not tmp is None:
+                if len(pssm1.matches) > 0:
+                    matches = ' '.join([match1['factor'] for match1 in pssm1.matches])
+                    if len(pssm1.expanded_matches) > 0:
                         expandedMatches = {}
-                        for i in tmp:
+                        for i in pssm1.expanded_matches:
                             if not i['seedFactor'] in original:
                                 original.append(i['seedFactor'])
                             if not i['seedFactor'] in expandedMatches:
@@ -1748,12 +1749,11 @@ def write_final_result(c1, mirna_ids_rev):
                     correlatedMatches[subset] = 'NA'
                     originalExpanded[subset] = 'NA'
                     minCorrelated[subset] = 'NA'
-                if not pssm1.get_matches() is None:
-                    matches = ' '.join([match1['factor'] for match1 in pssm1.get_matches()])
-                    tmp = pssm1.get_expanded_matches()
-                    if not tmp is None:
+                if len(pssm1.matches) > 0:
+                    matches = ' '.join([match1['factor'] for match1 in pssm1.matches])
+                    if len(pssm1.expanded_matches) > 0:
                         expandedMatches = {}
-                        for i in tmp:
+                        for i in pssm1.expanded_matches:
                             if not i['seedFactor'] in original:
                                 original.append(i['seedFactor'])
                             if not i['seedFactor'] in expandedMatches:
@@ -1848,9 +1848,9 @@ def write_final_result(c1, mirna_ids_rev):
                 pssm1 = bicluster.pssm_3putr(p3utrMotifs[weeder1])
                 matches = 'NA'
                 model = 'NA'
-                if not pssm1.get_matches() is None:
-                    matches = ' '.join([mirna_ids_rev[match1['factor']] for match1 in pssm1.get_matches()])
-                    model = pssm1.get_matches()[0]['confidence']
+                if len(pssm1.matches) > 0:
+                    matches = ' '.join([mirna_ids_rev[match1['factor']] for match1 in pssm1.matches])
+                    model = pssm1.matches[0]['confidence']
                 permutedPValue = 'NA'
                 if not pssm1.get_permuted_pvalue() is None:
                     permutedPValue = pssm1.get_permuted_pvalue()
