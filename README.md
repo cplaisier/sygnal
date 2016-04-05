@@ -95,17 +95,13 @@ ame	(Original Version)	--method mhg --scoring totalhits --verbose 1 --bgformat 2
 ### Configuration
 The SYGNAL pipeline is designed to be configured using the parameters starting at line 58 to 108 of sygnal.py. We will work to move the to a more convenient configuration file in the future.
 
-#################################################################
-## Parameters                                                  ##
-#################################################################
-
-# For MEME analysis
+#### For MEME analysis
 MEME_BGFILE       = 'seqs/bgFile.meme'
 MEME_NMOTIFS      = 2
 MEME_MOTIF_WIDTHS = {'upstream': [6, 12]}
 MEME_REVCOMP      = {'upstream': True}
 
-# Parameters for filtering results
+#### Parameters for filtering results
 MAX_EVALUE        = 10.0
 LEO_NB_ATOB       = 0.5  # Equates to ~3 times better model fit than next best model
 MLOGP_M_ATOB      = 0.05
@@ -118,11 +114,11 @@ SUBSETS = ['all'] # Might be nice to include subtypes
 SUBSETS_POS = { 'all': [0,422] } # Might be nice to include subtypes
 RAND_PSSMS_DIR = 'randPSSMs'
 
-# Detenrmine the working directories, we pass this to the
-# external R scripts
+#### Detenrmine the working directories, we pass this to the
+#### external R scripts
 CURRENT_DIR = os.getcwd()
-# note that we need to paste in the '/' at the end because the R scripts
-# currently assume it
+#### note that we need to paste in the '/' at the end because the R scripts
+#### currently assume it
 BASE_DIR = os.path.dirname(os.getcwd()) + '/'
 OUTPUT_DIR = os.path.join(CURRENT_DIR, 'output')
 
