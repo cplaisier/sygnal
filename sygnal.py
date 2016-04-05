@@ -66,32 +66,15 @@ MEME_MOTIF_WIDTHS = {'upstream': [6, 12]}
 MEME_REVCOMP      = {'upstream': True}
 
 # Parameters for filtering results
-MAX_EVALUE        = 10.0
-LEO_NB_ATOB       = 0.5  # Equates to ~3 times better model fit than next best model
-MLOGP_M_ATOB      = 0.05
-RHO_CUT           = 0.3
-PVALUE_CUT        = 0.05
-PERC_TARGETS      = 0.1
-POSTPROCESSED_FILENAME = 'postProcessed_gbmTCGA_pita.csv'
-FPC_FILENAME = 'biclusterFirstPrincComponents.csv'
 SUBSETS = ['all'] # Might be nice to include subtypes
 SUBSETS_POS = { 'all': [0,422] } # Might be nice to include subtypes
 
 RAND_PSSMS_DIR = 'randPSSMs'
-SYNONYM_PATH = '../synonymThesaurus.csv.gz'
-MIRNA_FASTA_PATH = 'miRNA/hsa.mature.fa'  # Need to update this to the latest database
-RATIOS_PATH = '../gbmTCGA_exprMat_medianFiltered.tsv'
-ALL_RATIOS_PATH = 'expression/gbmTCGA_exprMat.tsv'
-CMONKEY2_RUNDB = '../out/cmonkey_run.db'
-PHENOTYPES_PATH = 'extras/phenotypes.csv'
-
-REPLICATION_DATASET_NAMES = ['French','REMBRANDT','GSE7696']
 
 MOTIF_FILES = ['motifs/jasparCoreVertebrata_redundant.json',
                'motifs/transfac_2012.1_PSSMs_vertabrate.json',
                'motifs/uniprobePSSMsNonRedundant.json',
                'motifs/selexPSSMsNonRedundant.json']
-
 
 
 # global state for concurrent operations
@@ -369,7 +352,7 @@ def is_number(s):
         return False
 
 
-def read_synonyms():
+def read_synonyms(cfg):
     """ Load synonym thesaurus to get a mapping from entrez id to a list
     of UCSC IDs.
 
@@ -379,7 +362,7 @@ def read_synonyms():
     alternatives."""
     entrez2id = defaultdict(list)
 
-    with gzip.open(SYNONYM_PATH, 'r') as infile:
+    with gzip.open(cfg['synonyms-file'], 'r') as infile:
         for line in infile:
             row = line.strip().split(',')
             id = row[0]
@@ -390,12 +373,12 @@ def read_synonyms():
     return entrez2id
 
 
-def miRNA_mappings():
+def miRNA_mappings(cfg):
     """Create a dictionary to convert the miRNAs to there respective ids"""
     mirna_ids = {}
     mirna_ids_rev = {}
 
-    with open(MIRNA_FASTA_PATH, 'r') as infile:
+    with open(cfg['mirna-fasta-file'], 'r') as infile:
         for line in infile:
             splitUp = line.split(' ')
             if not splitUp[1] in mirna_ids_rev:
@@ -408,13 +391,13 @@ def miRNA_mappings():
     return mirna_ids, mirna_ids_rev
 
 
-def read_cmonkey_run(cfg, path):
+def read_cmonkey_run(cfg):
     """ Load cMonkey Object - turns cMonkey data into objects"""
     output_path = cfg.outdir_path('c1.pkl')
 
     # If this is the first time then load from the RData file
     if not os.path.exists(output_path):
-        c1 = cMonkeyWrapper(path, meme_upstream=False, weeder_upstream=False,
+        c1 = cMonkeyWrapper(cfg['cmonkey-rundb'], meme_upstream=False, weeder_upstream=False,
                             weeder_3pUTR=False, tfbs_db=False,
                             pita_3pUTR=False,
                             targetscan_3pUTR=False) #, geneConv=entrez2id)
@@ -749,7 +732,7 @@ def compute_3pUTR_targetscan_set_enrichment(cfg, c1, mirna_ids):
 def compute_additional_info(cfg, mirna_ids):
     cm_pkl_path = cfg.outdir_path('c1_all.pkl')
     if not os.path.exists(cm_pkl_path):
-        c1 = read_cmonkey_run(cfg, CMONKEY2_RUNDB)
+        c1 = read_cmonkey_run(cfg)
 
         ################################################################
         ## Fill in the missing parts                                  ##
@@ -824,9 +807,9 @@ def post_process(cluster_num):
     return attributes
 
 
-def __read_ratios(path, c1):
+def __read_ratios(cfg, c1):
     print "reading ratios matrix"
-    with open(path, 'r') as infile:
+    with open(cfg['ratios-file'], 'r') as infile:
         conditions = [i.strip('"') for i in infile.readline().strip().split('\t')]
         ratios = {}
         for line in infile:
@@ -846,13 +829,13 @@ def __read_ratios(path, c1):
     return ratios
 
 
-def __get_cluster_eigengenes(cfg, ratios_path, c1):
+def __get_cluster_eigengenes(cfg, c1):
     # Calculate bicluster eigengene (first principal components)
     print "compute bicluster eigengenes"
     cluster_eigengenes_path = cfg.outdir_path('biclusterEigengenes.csv')
     if not os.path.exists(cluster_eigengenes_path):
         ret = subprocess.check_call(['./getEigengene.R',
-                                     '-r', ratios_path,
+                                     '-r', cfg['ratios-file'],
                                      '-o', 'output'],
                                     stderr=subprocess.STDOUT)
         if ret == 1:
@@ -883,11 +866,11 @@ def __get_cluster_variance_explained(cfg, c1):
             bicluster.add_attribute('pc1.var.exp', varExplained[0])
 
 
-def __get_phenotype_info(phenotypes_path, c1):
+def __get_phenotype_info(cfg, c1):
     # AGE,chemo_therapy,SURVIVAL,days_to_tumor_progression,SEX.bi,radiation_therapy,DEAD
     print "read phenotype information"
     phenotypes = {}
-    with open(phenotypes_path, 'r') as infile:
+    with open(cfg['phenotypes-file'], 'r') as infile:
         ids = infile.readline().strip().split(',')[1:]
         for i in ids:
             phenotypes[i] = {}
@@ -1053,7 +1036,7 @@ def __expand_tf_factor_list(entrez2id):
     return tfName2entrezId, tfFamilies
 
 
-def __correlate_tfs_with_cluster_eigengenes(c1):
+def __correlate_tfs_with_cluster_eigengenes(cfg, c1):
 
     #######################################################################
     ## Filter expanded TFs through correlation with bicluster eigengenes ##
@@ -1062,7 +1045,7 @@ def __correlate_tfs_with_cluster_eigengenes(c1):
     
     # Get microarray data
     exp_data = {}
-    with open(ALL_RATIOS_PATH, 'r') as infile:
+    with open(cfg['all-ratios-file'], 'r') as infile:
         all_names = map(lambda n: n.strip('"'), infile.readline().strip().split('\t'))
         for line in infile:
             row = line.strip().split('\t')
@@ -1159,7 +1142,7 @@ def __write_first_principal_components(cfg, c1):
         fpcWrite.append(str(i)+','+','.join([str(pc1[j]) for j in conditions]))
 
     # Dump out file
-    with open(cfg.outdir_path(FPC_FILENAME), 'w') as outfile:
+    with open(cfg.outdir_path(cfg["first-principal-comps-result-file"]), 'w') as outfile:
         outfile.write('Bicluster,'+','.join([j.strip() for j in conditions])+'\n')
         outfile.write('\n'.join(fpcWrite))
     print 'Done.\n'
@@ -1190,7 +1173,7 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(cfg, c1):
                 randPssmsDict[i][pssm1].de_novo_method = 'meme'
             delMes = []
             for randPssm in randPssmsDict[i]:
-                if not float(randPssmsDict[i][randPssm].evalue) <= MAX_EVALUE:
+                if not float(randPssmsDict[i][randPssm].evalue) <= cfg['max-evalue']:
                     delMes.append(randPssm)
             for j in delMes:
                 del randPssmsDict[i][j]
@@ -1355,7 +1338,7 @@ def __make_replication_pvalues(cfg, c1):
         cmcFile.write('\n'.join(writeMe))
 
     # Run replication on all datasets
-    run_sets = [name for name in REPLICATION_DATASET_NAMES
+    run_sets = [name for name in cfg["replication-dataset-names"]
                 if not os.path.exists(cfg.outdir_path('replicationPvalues_%s.csv' % name))]
 
     if len(run_sets) > 0:
@@ -1370,6 +1353,10 @@ def __make_replication_pvalues(cfg, c1):
 
 
 def __read_replication_pvalues(cfg, c1):
+    """TODO: This function still contains the largest refactoring potential
+    It is hardcodes the dataset names and is inherently redundant. The way
+    to go is to ensure uniform input and output formats and then use the same
+    code to handle all data set types."""
     # Read in replication p-values - French Dataset      
     # '','n.rows','overlap.rows','new.resid.norm.gbm','avg.norm.perm.resid.gbm','norm.perm.p.gbm','new.resid.norm.all','avg.norm.perm.resid.all','norm.perm.p.all','pc1.var.exp.gbm','avg.pc1.var.exp.gbm','pc1.perm.p.gbm','pc1.var.exp.all','avg.pc1.var.exp.all','pc1.perm.p.all','survival.gbm','survival.p.gbm','survival.age.gbm','survival.age.p.gbm','survival.all','survival.p.all','survival.age.all','survival.age.p.all'
     print 'Loading replication p-values...'
@@ -1486,14 +1473,14 @@ def __add_hallmarks_of_cancer(cfg, c1):
 def perform_postprocessing(cfg, c1, entrez2id, mirna_ids):
     pkl_path = cfg.outdir_path('c1_postProc.pkl')
     if not os.path.exists(pkl_path):
-        ratios = __read_ratios(RATIOS_PATH, c1)
-        __get_cluster_eigengenes(cfg, RATIOS_PATH, c1)
+        ratios = __read_ratios(cfg, c1)
+        __get_cluster_eigengenes(cfg, c1)
         __get_cluster_variance_explained(cfg, c1)
-        phenotypes = __get_phenotype_info(PHENOTYPES_PATH, c1)
+        phenotypes = __get_phenotype_info(cfg, c1)
         __do_postprocess(cfg.outdir_path('postProcessed.pkl'), c1, ratios, phenotypes)
         __tomtom_upstream_motifs(cfg)
         tf_name2entrezid, tf_families = __expand_tf_factor_list(entrez2id)
-        exp_data, all_names = __correlate_tfs_with_cluster_eigengenes(c1)
+        exp_data, all_names = __correlate_tfs_with_cluster_eigengenes(cfg, c1)
         __expand_and_correlate_tfbsdb_tfs(c1, tf_name2entrezid, tf_families,
                                           exp_data, all_names)
         __write_first_principal_components(cfg, c1)
@@ -1548,8 +1535,8 @@ def write_neo_summary(cfg):
                             if not inLine:
                                 break
                             splitUp = inLine.strip().split(',')
-                            if (float(splitUp[6]) > LEO_NB_ATOB and
-                                float(splitUp[12]) <= MLOGP_M_ATOB):
+                            if (float(splitUp[6]) > cfg['leo-nb-atob'] and
+                                float(splitUp[12]) <= cfg['mlogp-m-atob']):
                                 # Somatic Mutation(1), Regulator(3), Biclster(5), leo.nb.AtoB(6), mlogp.M.AtoB(12), PathAB(17), SEPathAB(18), ZPathAB(19), PPathAB(20), BLV.AtoB(25), RMSEA.AtoB(28)
                                 causalSummary.append({'Mutation': splitUp[1].strip('"').lstrip('M:'), 'Regulator': splitUp[3].strip('"').lstrip('A:'), 'Bicluster': splitUp[5].strip('"').lstrip('B:bic_'), 'leo.nb.AtoB': splitUp[6], 'mlogp.M.AtoB': splitUp[12], 'PathAB': splitUp[17], 'SEPathAB': splitUp[18], 'ZPathAB': splitUp[19], 'PPathAB': splitUp[20], 'BLV.AtoB': splitUp[25], 'RMSEA.AtoB': splitUp[28]})
 
@@ -1561,7 +1548,7 @@ def write_neo_summary(cfg):
     return causalSummary
 
 
-def add_correspondent_regulators(c1, causal_summary, mirna_ids_rev):
+def add_correspondent_regulators(cfg, c1, causal_summary, mirna_ids_rev):
     """Dump out correspondent regulators (both mechanistically and causally predicted)"""
     correspondentRegulators = {}
     for causalFlow in causal_summary:
@@ -1574,12 +1561,12 @@ def add_correspondent_regulators(c1, causal_summary, mirna_ids_rev):
                 matches = pssm.correlated_matches(subset)
                 if not matches is None:
                     for corTf in matches:
-                        if (corTf['pValue'] <= PVALUE_CUT and
-                            abs(corTf['rho']) >= RHO_CUT):
+                        if (corTf['pValue'] <= cfg['pvalue-cut'] and
+                            abs(corTf['rho']) >= cfg['rho-cut']):
                             tfs.append(corTf['factor'])
             # 2. TFBS_DB
             for corTf in bicluster.attributes['tfbs_db_correlated'][subset]:
-                if corTf['pValue'] <= PVALUE_CUT and abs(corTf['rho']) >= RHO_CUT:
+                if corTf['pValue'] <= cfg['pvalue-cut'] and abs(corTf['rho']) >= cfg['rho-cut']:
                     tfs.append(corTf['factor'])
         # 3. Find Correspondent TF regulators
         if causalFlow['Regulator'] in tfs:
@@ -1596,12 +1583,12 @@ def add_correspondent_regulators(c1, causal_summary, mirna_ids_rev):
                     miRNAs += mirna_ids_rev[miR['factor']]
 
         # 2. PITA (not correlated)
-        if (float(bicluster.attributes['pita_3pUTR']['pValue']) <= PVALUE_CUT and
-            float(bicluster.attributes['pita_3pUTR']['percentTargets'].split(' ')[0]) >= PERC_TARGETS):
+        if (float(bicluster.attributes['pita_3pUTR']['pValue']) <= cfg['pvalue-cut'] and
+            float(bicluster.attributes['pita_3pUTR']['percentTargets'].split(' ')[0]) >= cfg['perc-targets']):
             miRNAs += bicluster.attributes['pita_3pUTR']['miRNA'].split(' ')
         # 3. TargetScan (not correlated)
-        if (float(bicluster.attributes['targetscan_3pUTR']['pValue']) <= PVALUE_CUT and
-            float(bicluster.attributes['targetscan_3pUTR']['percentTargets'].split(' ')[0]) >= PERC_TARGETS):
+        if (float(bicluster.attributes['targetscan_3pUTR']['pValue']) <= cfg['pvalue-cut'] and
+            float(bicluster.attributes['targetscan_3pUTR']['percentTargets'].split(' ')[0]) >= cfg['perc-targets']):
             miRNAs += bicluster.attributes['targetscan_3pUTR']['miRNA'].split(' ')
         # 4. Find Correspondent miRNA regulators
         for miR in miRNAs:
@@ -1677,8 +1664,8 @@ def write_final_result(cfg, c1, mirna_ids_rev):
                         tmp = pssm1.correlated_matches(subset)
                         if not tmp is None:
                             for match1 in tmp:
-                                if (match1['pValue'] <= PVALUE_CUT and
-                                    abs(match1['rho']) >= RHO_CUT):
+                                if (match1['pValue'] <= cfg['pvalue-cut'] and
+                                    abs(match1['rho']) >= cfg['rho-cut']):
                                     if correlatedMatches[subset]=='NA':
                                         correlatedMatches[subset] = []
                                     correlatedMatches[subset].append(match1['factor']+':'+str(match1['rho'])+':'+str(match1['pValue']))
@@ -1734,8 +1721,8 @@ def write_final_result(cfg, c1, mirna_ids_rev):
                         tmp = pssm1.correlated_matches(subset)
                         if not tmp is None:
                             for match1 in tmp:
-                                if (match1['pValue'] <= PVALUE_CUT and
-                                    abs(match1['rho']) >= RHO_CUT):
+                                if (match1['pValue'] <= cfg['pvalue-cut'] and
+                                    abs(match1['rho']) >= cfg['rho-cut']):
                                     if correlatedMatches[subset]=='NA':
                                         correlatedMatches[subset] = []
                                     correlatedMatches[subset].append(match1['factor']+':'+str(match1['rho'])+':'+str(match1['pValue']))
@@ -1779,8 +1766,8 @@ def write_final_result(cfg, c1, mirna_ids_rev):
                 for subset in SUBSETS:
                     if not tmp[subset] is None:
                         for match1 in tmp[subset]:
-                            if (match1['pValue'] <= PVALUE_CUT and
-                                abs(match1['rho']) >= RHO_CUT):
+                            if (match1['pValue'] <= cfg['pvalue-cut'] and
+                                abs(match1['rho']) >= cfg['rho-cut']):
                                 if correlatedMatches[subset]=='NA':
                                     correlatedMatches[subset] = []
                                 correlatedMatches[subset].append(match1['factor']+':'+str(match1['rho'])+':'+str(match1['pValue']))
@@ -1903,7 +1890,7 @@ def write_final_result(cfg, c1, mirna_ids_rev):
         # Add to the final output file
         postOut.append(deepcopy(writeMe))
 
-    with open(cfg.outdir_path(POSTPROCESSED_FILENAME), 'w') as postFinal:
+    with open(cfg.outdir_path(cfg['postprocessing-result-file']), 'w') as postFinal:
         header = ['Bicluster', 'Genes', 'Patients', 'Norm. Residual', 'Norm. Residual Perm. P-Value', 'Var. Exp. First PC', 'Var. Exp. First PC Perm. P-Value'] + \
          ['MEME Motif1 E-Value', 'MEME Motif1 Perm. P-Value', 'Up.MEME Motif1 Consensus', 'Up.MEME Motif1 Matches','Up.MEME Motif1 Expanded Matches', 'Up.MEME Motif1 Correlated Matches', 'Up.MEME Motif1 Original/Expanded', 'Up.MEME Motif1 Minimum Correlated'] + \
          ['Up.MEME Motif2 E-Value', 'Up.MEME Motif2 Perm. P-Value', 'Up.MEME Motif2 Consensus', 'Up.MEME Motif2 Matches', 'Up.MEME Motif2 Expanded Matches', 'Up.MEME Motif2 Correlated Matches', 'Up.MEME Motif2 Original/Expanded', 'Up.MEME Motif2 Minimum Correlated'] + \
@@ -1929,11 +1916,11 @@ def write_final_result(cfg, c1, mirna_ids_rev):
 if __name__ == '__main__':
     cfg = config.sygnal_init()
 
-    entrez2id = read_synonyms()
-    mirna_ids, mirna_ids_rev = miRNA_mappings()
+    entrez2id = read_synonyms(cfg)
+    mirna_ids, mirna_ids_rev = miRNA_mappings(cfg)
     c1 = compute_additional_info(cfg, mirna_ids)
     c1 = perform_postprocessing(cfg, c1, entrez2id, mirna_ids)
     run_neo(cfg)
     causal_summary = write_neo_summary(cfg)
-    add_correspondent_regulators(c1, causal_summary, mirna_ids_rev)
+    add_correspondent_regulators(cfg, c1, causal_summary, mirna_ids_rev)
     write_final_result(cfg, c1, mirna_ids_rev)

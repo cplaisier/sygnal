@@ -27,6 +27,9 @@ class SygnalConfig:
         if not os.path.exists(tmppath):
             os.makedirs(tmppath)
 
+    def __getitem__(self, key):
+        return self.config[key]
+
 
 
 def sygnal_init():
@@ -36,12 +39,14 @@ def sygnal_init():
     parser.add_argument('--config',  default="sygnal_config.json", help="config file")
     parser.add_argument('--out',  default='output', help='output directory')
     parser.add_argument('--tmp',  default='tmp', help='temporary output directory')
+    parser.add_argument('cm_rundb', help='cmonkey2 run database')
     args = parser.parse_args()
 
     with open(args.config, 'r') as infile:
         config = json.load(infile)
         config['outdir'] = args.out
         config['tmpdir'] = args.tmp
+        config['cmonkey-rundb'] = args.cm_rundb
 
         if not os.path.exists(config['outdir']):
             os.makedirs(config['outdir'])

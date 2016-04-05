@@ -1,11 +1,33 @@
 {
-    "tomtom": [
-        {
+    "max-evalue": 10.0,
+    "rho-cut": 0.3,
+    "pvalue-cut": 0.05,
+    "perc-targets": 0.1,
+    "leo-nb-atob": 0.5,
+    "mlogp-m-atob": 0.05,
+
+    "synonyms-file": "../synonymThesaurus.csv.gz",
+    "phenotypes-file": "extras/phenotypes.csv",
+    "ratios-file": "../gbmTCGA_exprMat_medianFiltered.tsv",
+    "all-ratios-file": "expression/gbmTCGA_exprMat.tsv",
+    "mirna-fasta-file": "miRNA/hsa.mature.fa",
+
+    "replication-dataset-names": ["French", "REMBRANDT", "GSE7696"],
+
+    "meme": [ { "seqtype": "upstream",
+                "nmotifs": 2,
+                "motif-widths": [6, 12],
+                "revcomp": "true"
+            } ],
+
+    "tomtom": [ {
             "seqtype": "upstream",
             "motif-files": ["motifs/jasparCoreVertebrata_redundant.json",
                             "motifs/transfac_2012.1_PSSMs_vertabrate.json",
                             "motifs/uniprobePSSMsNonRedundant.json",
                             "motifs/selexPSSMsNonRedundant.json"]
-            }
-        ]
+            } ],
+
+    "postprocessing-result-file": "postProcessed_gbmTCGA_pita.csv",
+    "first-principal-comps-result-file": "biclusterFirstPrincComponents.csv"
 }
