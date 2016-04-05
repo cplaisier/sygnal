@@ -1,6 +1,8 @@
 ## Systems Genetic Network AnaLysis (SYGNAL) pipeline
 We developed the SYstems Genetic Network AnaLysis (SYGNAL) pipeline to integrate correlative, causal and mechanistic inference approaches into a unified framework that systematically infers the causal flow of information from mutations to TFs and miRNAs to perturbed gene expression patterns across patients.
 
+The SYGNAL pipeline is designed to be cloned into a completed [cMonkey<sub>2</sub>](https://github.com/baliga-lab/cmonkey2) run directory. It will then run the SYGNAL pipeline using the cMonkey<sub>2</sub> result database and put all the results into 'sygnal/output' directory, which it will create if not already present. There is fairly through checkpointing as the full SYGNAL pipeline can take some time to run.
+
 ### Dependencies
 * MEME (http://meme-suite.org/doc/download.html?man_type=web)
 * WEEDER (https://github.com/baliga-lab/weeder_patched)
@@ -91,5 +93,58 @@ tomtom	(4.11.1)	-dist ed -o tmp/tomtom_out -text -thresh 1 -min-overlap 6 -verbo
 ame	(Original Version)	--method mhg --scoring totalhits --verbose 1 --bgformat 2 --bgfile bgFile.meme		
 ```
 ### Configuration
+The SYGNAL pipeline is designed to be configured using the parameters starting at line 58 to 108 of sygnal.py. We will work to move the to a more convenient configuration file in the future.
+
+#################################################################
+## Parameters                                                  ##
+#################################################################
+
+# For MEME analysis
+MEME_BGFILE       = 'seqs/bgFile.meme'
+MEME_NMOTIFS      = 2
+MEME_MOTIF_WIDTHS = {'upstream': [6, 12]}
+MEME_REVCOMP      = {'upstream': True}
+
+# Parameters for filtering results
+MAX_EVALUE        = 10.0
+LEO_NB_ATOB       = 0.5  # Equates to ~3 times better model fit than next best model
+MLOGP_M_ATOB      = 0.05
+RHO_CUT           = 0.3
+PVALUE_CUT        = 0.05
+PERC_TARGETS      = 0.1
+POSTPROCESSED_FILENAME = 'postProcessed_gbmTCGA_pita.csv'
+FPC_FILENAME = 'biclusterFirstPrincComponents.csv'
+SUBSETS = ['all'] # Might be nice to include subtypes
+SUBSETS_POS = { 'all': [0,422] } # Might be nice to include subtypes
+RAND_PSSMS_DIR = 'randPSSMs'
+
+# Detenrmine the working directories, we pass this to the
+# external R scripts
+CURRENT_DIR = os.getcwd()
+# note that we need to paste in the '/' at the end because the R scripts
+# currently assume it
+BASE_DIR = os.path.dirname(os.getcwd()) + '/'
+OUTPUT_DIR = os.path.join(CURRENT_DIR, 'output')
+
+SYNONYM_PATH = '../synonymThesaurus.csv.gz'
+MIRNA_FASTA_PATH = 'miRNA/hsa.mature.fa'  # Need to update this to the latest database
+RATIOS_PATH = '../gbmTCGA_exprMat_medianFiltered.tsv'
+ALL_RATIOS_PATH = 'expression/gbmTCGA_exprMat.tsv'
+CMONKEY2_RUNDB = '../out/cmonkey_run.db'
+REPLICATION_DATASET_NAMES = ['French','REMBRANDT','GSE7696']
+CM_PKL_PATH = 'output/c1_all.pkl'
+
+MOTIF_FILES = ['motifs/jasparCoreVertebrata_redundant.json',
+               'motifs/transfac_2012.1_PSSMs_vertabrate.json',
+               'motifs/uniprobePSSMsNonRedundant.json',
+               'motifs/selexPSSMsNonRedundant.json']
+
+
+CLUSTER_GENES_PATH = 'output/cluster.members.genes.txt'
+CLUSTER_CONDS_PATH = 'output/cluster.members.conditions.txt'
+CLUSTER_EIGENGENES_PATH = 'output/biclusterEigengenes.csv'
+CLUSTER_VARIANCE_EXPLAINED_PATH = 'output/biclusterVarianceExplained.csv'
+PHENOTYPES_PATH = 'extras/phenotypes.csv'
+POSTPROCESS_PKL_PATH = 'output/postProcessed.pkl'
 
 ### Output and visualizations
