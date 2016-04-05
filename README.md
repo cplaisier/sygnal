@@ -95,6 +95,7 @@ ame	(Original Version)	--method mhg --scoring totalhits --verbose 1 --bgformat 2
 ### Configuration
 The SYGNAL pipeline is designed to be configured using the parameters starting at line 58 to 108 of sygnal.py. We will work to move the to a more convenient configuration file in the future.
 
+```
 #### For MEME analysis
 MEME_BGFILE       = 'seqs/bgFile.meme'
 MEME_NMOTIFS      = 2
@@ -142,5 +143,6 @@ CLUSTER_EIGENGENES_PATH = 'output/biclusterEigengenes.csv'
 CLUSTER_VARIANCE_EXPLAINED_PATH = 'output/biclusterVarianceExplained.csv'
 PHENOTYPES_PATH = 'extras/phenotypes.csv'
 POSTPROCESS_PKL_PATH = 'output/postProcessed.pkl'
+```
 
 ### Output and visualizations
