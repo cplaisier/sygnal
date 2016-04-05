@@ -22,24 +22,30 @@ from numpy import array, float64, log10
 import json
 
 
-class pssm:
+class PSSM:
     """
     A class designed to hold a position specific scoring matrix
     and be able to output this in many different formats
     """
-    def __init__(self, name, nsites, eValue, matrix, genes, de_novo_method='meme'):
+    def __init__(self, name, nsites, evalue, matrix, genes, de_novo_method='meme'):
+        self.name = name
+        self.nsites = nsites
+        self.evalue = evalue
+        self.matrix = matrix
+        self.genes = genes
         self.de_novo_method = de_novo_method
+
+        # Note: this attribute is interchangeably used as a dictionary, a float
+        # and a string, think about changing that
+        self.permuted_pvalue = None
+
         # each entry in matches should be a dictionary of
         # {'factor':<factor_name>,'confidence':<confidence_value>}
         self.matches = []  
-        self.permutedPValue = None
-        self.name = name
-        self.nsites = nsites
-        self.eValue = eValue
-        self.matrix = matrix
-        self.genes = genes
-
         self.expanded_matches = []
+
+        # not a defaultdict because it's not serializable
+        self.__correlated_matches = {}
 
     def num_genes(self):
         return len(self.genes)
@@ -51,24 +57,13 @@ class pssm:
         self.expanded_matches.append({'factor':factor, 'seedFactor':seedFactor})
 
     def add_correlated_match(self, subset, factor, rho, pValue):
-        if not hasattr(self,'correlatedMatches'):
-            self.correlatedMatches = {}
-        if not subset in self.correlatedMatches:
-            self.correlatedMatches[subset] = []
-        self.correlatedMatches[subset].append({'factor':factor, 'rho':rho, 'pValue':pValue})
+        if not subset in self.__correlated_matches:
+            self.__correlated_matches[subset] = []
+        self.correlatedMatches[subset].append({'factor': factor, 'rho': rho, 'pValue': pValue})
 
-    def get_correlated_matches(self, subset):
-        if hasattr(self, 'correlatedMatches') and subset in self.correlatedMatches and not self.correlatedMatches[subset]==[]:
-            return self.correlatedMatches[subset]
-        else:
-            return None
-
-    def set_permuted_pvalue(self, permutedPValue):
-        self.permutedPValue = permutedPValue
-
-    def get_permuted_pvalue(self):
-        if hasattr(self,'permutedPValue'):
-            return self.permutedPValue
+    def correlated_matches(self, subset):
+        if subset in self.__correlated_matches:
+            return self.__correlated_matches[subset]
         else:
             return None
 
@@ -85,7 +80,7 @@ def to_meme_str(pssm):
     result += 'BL   MOTIF ' + pssm.name + ' width=0 seqs=0\n'
     if pssm.de_novo_method == 'meme':
         nsites = pssm.nsites
-        evalue = pssm.eValue
+        evalue = pssm.evalue
     elif pssm.de_novo_method == 'weeder':
         nsites = len(pssm.nsites)
         evalue = 0.05
@@ -146,7 +141,7 @@ def __col_consensus(matrix, i, lim1, lim2, three):
 
 
 def __make_pssm_json(pssm_json):
-    return pssm(pssm_json['name'], pssm_json['nsites'], pssm_json['evalue'],
+    return PSSM(pssm_json['name'], pssm_json['nsites'], pssm_json['evalue'],
                 pssm_json['matrix'], pssm_json['genes'])
 
 

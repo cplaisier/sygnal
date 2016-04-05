@@ -139,7 +139,7 @@ class cMonkeyWrapper:
                     if de_novo_method == 'NA' or de_novo_method == pssm.de_novo_method:
                         # Only add it if it is less than an E-Value threshold
                         if (maxEValue == 'NA' or
-                            float(pssm.eValue) <= float(maxEValue)):
+                            float(pssm.evalue) <= float(maxEValue)):
                             pssms.append(pssm)
                             pssmsNames.append(pssm.name)
         return dict(zip(pssmsNames, pssms))
@@ -161,7 +161,7 @@ class cMonkeyWrapper:
                 for pssm in tmpPssms:
                     # Only add it if it is less than an E-Value threshold
                     if de_novo_method == 'NA' or de_novo_method == pssm.de_novo_method:
-                        if maxEValue == 'NA' or float(pssm.eValue) <= float(maxEValue):
+                        if maxEValue == 'NA' or float(pssm.evalue) <= float(maxEValue):
                             pssms.append(pssm)
                             pssmsNames.append(pssm.name)
         return dict(zip(pssmsNames,pssms))

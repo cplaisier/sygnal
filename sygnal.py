@@ -34,7 +34,7 @@ from rpy2 import rinterface
 
 # Custom offYerBack libraries
 from cMonkeyWrapper import cMonkeyWrapper
-from pssm import pssm
+from pssm import PSSM
 import pssm as pssm_mod
 from miRvestigator import miRvestigator
 import utils
@@ -156,7 +156,7 @@ def meme(num, seqfile, bgfile, nmotifs, min_motif_width, max_motif_width, revcom
             for j in range(width):
                 i += 1
                 matrix += [[float(let) for let in output[i].strip().split(' ') if let]]
-            PSSMs.append(pssm('%s_motif%s_meme' % ((seqfile.split('_')[1]).split('.')[0], desc_comps[1]),
+            PSSMs.append(PSSM('%s_motif%s_meme' % ((seqfile.split('_')[1]).split('.')[0], desc_comps[1]),
                               sites, evalue, matrix, [], 'meme'))
     g_cluster_meme_runs[num] = PSSMs
 
@@ -282,7 +282,7 @@ def weeder(bicluster, seqfile, bgfile, size, enriched, revcomp):
             colsum = sum(nums)
             matrix += [[ nums[0] / colsum, nums[1] / colsum, nums[2] / colsum, nums[3] / colsum]]
             col = outLines.pop(0)
-        PSSMs += [pssm('%d_motif%d_weeder' % (bicluster_id, motif_id),
+        PSSMs += [PSSM('%d_motif%d_weeder' % (bicluster_id, motif_id),
                        len(instances), hitBp[len(matrix)][1], matrix, red_motifs, 'weeder')]
         motif_id += 1
     g_weeder_results[bicluster] = PSSMs
@@ -966,10 +966,7 @@ def __tomtom_upstream_motifs():
 
     target_pssms_in = []
     for motif_file in MOTIF_FILES:
-        #with open(motif_file, 'rb') as infile:
-        #pssms = cPickle.load(pklFile)
         pssms = pssm_mod.load_pssms_json(motif_file)
-        print pssms.keys()
         for pssm in pssms.values():
             pssm.de_novo_method = 'meme'
         target_pssms_in.append(pssms)
@@ -1209,14 +1206,12 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
             stdout.flush()
             filepath = os.path.join(RAND_PSSMS_DIR, 'pssms_upstream_%d.json' % i)
             randPssmsDict[i] = pssm_mod.load_pssms_json(filepath)
-            #pklFile = open(RAND_PSSMS_DIR + '/pssms_upstream_'+str(i)+'.pkl', 'rb')
-            #randPssmsDict[i] = cPickle.load(pklFile)
             
             for pssm1 in randPssmsDict[i]:
                 randPssmsDict[i][pssm1].de_novo_method = 'meme'
             delMes = []
             for randPssm in randPssmsDict[i]:
-                if not float(randPssmsDict[i][randPssm].eValue) <= MAX_EVALUE:
+                if not float(randPssmsDict[i][randPssm].evalue) <= MAX_EVALUE:
                     delMes.append(randPssm)
             for j in delMes:
                 del randPssmsDict[i][j]
@@ -1258,9 +1253,9 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
             permPValues[outputLine[0]] = { mot + '.consensus': pssm_mod.consensus_motif(pssms[outputLine[0]]),
                                            mot + '.permutedEV<=10': str(len(pValues)),
                                            mot + '.similar':str(similar),
-                                           mot+'.permPV':str(float(similar)/float(1000)) }
-            pssms[outputLine[0]].set_permuted_pvalue(str(float(similar)/float(1000)))
-            outFile.write('\n'+str(outputLine[0])+',upstream,'+str(pssms[outputLine[0]].eValue)+',' + pssm_mod.consensus_motif(pssms[outputLine[0]]) + ',' + str(len(pValues)) + ',' + str(similar) + ',' + str(1000) + ',' + str(float(similar)/float(1000)))
+                                           mot+'.permPV':str(float(similar) / 1000.0) }
+            pssms[outputLine[0]].permuted_pvalue = float(similar) / 1000.0
+            outFile.write('\n'+str(outputLine[0])+',upstream,'+str(pssms[outputLine[0]].evalue)+',' + pssm_mod.consensus_motif(pssms[outputLine[0]]) + ',' + str(len(pValues)) + ',' + str(similar) + ',' + str(1000) + ',' + str(float(similar)/float(1000)))
         outFile.close()
     else:
         print 'Using precalculated upstream p-values...'
@@ -1269,7 +1264,7 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
         upPValues = [i.strip().split(',') for i in inFile.readlines()]
         inFile.close()
         for line in upPValues:
-            pssms[line[0]].set_permuted_pvalue(str(float(line[7])/float(1000)))
+            pssms[line[0]].permuted_pvalue = float(line[7]) / 1000.0
     print 'Done.\n'
 
 
@@ -1339,9 +1334,11 @@ def __convert_mirvestigator_3putr_results(c1, mirna_ids):
         for c in clustSizes:
             if seqNum > c:
                 clustInd = c
-        pValue = float(sum(1 for i in weederRand[str(width)+'bp'][clustInd] if float(i) >= float(pssms[pssm1].eValue)))/float(len(weederRand[str(width)+'bp'][clustInd]))
-        pValue_all = float(sum(1 for i in weederRand_all[str(width)+'bp'][clustInd] if float(i) >= float(pssms[pssm1].eValue)))/float(len(weederRand_all[str(width)+'bp'][clustInd]))
-        pssms[pssm1].set_permuted_pvalue({'pValue':pValue,'pValue_all':pValue_all})
+        pValue = float(sum(1 for i in weederRand[str(width)+'bp'][clustInd] if float(i) >= float(pssms[pssm1].evalue)))/float(len(weederRand[str(width)+'bp'][clustInd]))
+        pValue_all = float(sum(1 for i in weederRand_all[str(width)+'bp'][clustInd] if float(i) >= float(pssms[pssm1].evalue)))/float(len(weederRand_all[str(width)+'bp'][clustInd]))
+
+        # note the inconsistent usage of the permuted_pvalue attribute
+        pssms[pssm1].permuted_pvalue = {'pValue':pValue,'pValue_all':pValue_all}
     print 'Done.\n'
 
 
@@ -1601,8 +1598,8 @@ def add_correspondent_regulators(c1, causal_summary, mirna_ids_rev):
         # 1. MEME and WEEDER Upstream motifs
         for pssm in bicluster.pssms_upstream:
             for subset in SUBSETS:
-                matches = pssm.get_correlated_matches(subset)
-                if matches:
+                matches = pssm.correlated_matches(subset)
+                if not matches is None:
                     for corTf in matches:
                         if (corTf['pValue'] <= PVALUE_CUT and
                             abs(corTf['rho']) >= RHO_CUT):
@@ -1704,8 +1701,8 @@ def write_final_result(c1, mirna_ids_rev):
                             expandedMatches[i['seedFactor']].append(i['factor'])
                         expandedMatches = ' '.join([seedFactor+':'+';'.join(expandedMatches[seedFactor]) for seedFactor in expandedMatches])
                     for subset in SUBSETS:
-                        tmp = pssm1.get_correlated_matches(subset)
-                        if not tmp==None:
+                        tmp = pssm1.correlated_matches(subset)
+                        if not tmp is None:
                             for match1 in tmp:
                                 if (match1['pValue'] <= PVALUE_CUT and
                                     abs(match1['rho']) >= RHO_CUT):
@@ -1722,8 +1719,8 @@ def write_final_result(c1, mirna_ids_rev):
                                 else:
                                     originalExpanded[subset] = 'Expanded'
                                 minCorrelated[subset] = minCorrelated[subset]['factor']+':'+str(minCorrelated[subset]['rho'])+':'+str(minCorrelated[subset]['pValue'])
-                writeMe += ([str(pssm1.eValue),
-                             str(pssm1.get_permuted_pvalue()),
+                writeMe += ([str(pssm1.evalue),
+                             str(pssm1.permuted_pvalue),
                              pssm_mod.consensus_motif(pssm1),
                              matches,  # motif natches from TransFac and Jaspar
                              expandedMatches]  # Expanded matches (TFClass)
@@ -1761,7 +1758,7 @@ def write_final_result(c1, mirna_ids_rev):
                             expandedMatches[i['seedFactor']].append(i['factor'])
                         expandedMatches = ' '.join([seedFactor+':'+';'.join(expandedMatches[seedFactor]) for seedFactor in expandedMatches])
                     for subset in SUBSETS:
-                        tmp = pssm1.get_correlated_matches(subset)
+                        tmp = pssm1.correlated_matches(subset)
                         if not tmp is None:
                             for match1 in tmp:
                                 if (match1['pValue'] <= PVALUE_CUT and
@@ -1779,7 +1776,7 @@ def write_final_result(c1, mirna_ids_rev):
                                 else:
                                     originalExpanded[subset] = 'Expanded'
                                 minCorrelated[subset] = minCorrelated[subset]['factor']+':'+str(minCorrelated[subset]['rho'])+':'+str(minCorrelated[subset]['pValue'])
-                writeMe += ([str(pssm1.eValue),
+                writeMe += ([str(pssm1.evalue),
                              pssm_mod.consensus_motif(pssm1),
                              matches,  # motif matches (TransFac and Jaspar)
                              expandedMatches]  # Expanded matches (TFClass)
@@ -1851,10 +1848,8 @@ def write_final_result(c1, mirna_ids_rev):
                 if len(pssm1.matches) > 0:
                     matches = ' '.join([mirna_ids_rev[match1['factor']] for match1 in pssm1.matches])
                     model = pssm1.matches[0]['confidence']
-                permutedPValue = 'NA'
-                if not pssm1.get_permuted_pvalue() is None:
-                    permutedPValue = pssm1.get_permuted_pvalue()
-                writeMe += [str(pssm1.eValue), # E-value
+                permutedPValue = 'NA' if pssm1.permuted_pvalue is None else pssm1.permuted_pvalue
+                writeMe += [str(pssm1.evalue),
                             str(permutedPValue['pValue']), # Permuted p-value for motif
                             str(permutedPValue['pValue_all']), # Permuted p-value for motif (all)
                             pssm_mod.consensus_motif(pssm1),
