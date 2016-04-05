@@ -1,0 +1,11 @@
+{
+    "tomtom": [
+        {
+            "seqtype": "upstream",
+            "motif-files": ["motifs/jasparCoreVertebrata_redundant.json",
+                            "motifs/transfac_2012.1_PSSMs_vertabrate.json",
+                            "motifs/uniprobePSSMsNonRedundant.json",
+                            "motifs/selexPSSMsNonRedundant.json"]
+            }
+        ]
+}

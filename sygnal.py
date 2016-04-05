@@ -20,13 +20,14 @@
 
 from math import log10
 import cPickle, os, re, sys
-from sys import stdout
+from sys import stdout, exit
 from multiprocessing import Pool, cpu_count, Manager
 from subprocess import *
 import subprocess
 from shutil import rmtree
 from copy import deepcopy
 from collections import defaultdict
+import gzip
 
 import rpy2.robjects as robj
 from rpy2.robjects import FloatVector, IntVector, StrVector
@@ -38,8 +39,7 @@ from pssm import PSSM
 import pssm as pssm_mod
 from miRvestigator import miRvestigator
 import utils
-from sys import stdout, exit
-import gzip
+import config
 
 
 #################################################################
@@ -76,23 +76,16 @@ POSTPROCESSED_FILENAME = 'postProcessed_gbmTCGA_pita.csv'
 FPC_FILENAME = 'biclusterFirstPrincComponents.csv'
 SUBSETS = ['all'] # Might be nice to include subtypes
 SUBSETS_POS = { 'all': [0,422] } # Might be nice to include subtypes
+
 RAND_PSSMS_DIR = 'randPSSMs'
-
-# Detenrmine the working directories, we pass this to the
-# external R scripts
-CURRENT_DIR = os.getcwd()
-# note that we need to paste in the '/' at the end because the R scripts
-# currently assume it
-BASE_DIR = os.path.dirname(os.getcwd()) + '/'
-OUTPUT_DIR = os.path.join(CURRENT_DIR, 'output')
-
 SYNONYM_PATH = '../synonymThesaurus.csv.gz'
 MIRNA_FASTA_PATH = 'miRNA/hsa.mature.fa'  # Need to update this to the latest database
 RATIOS_PATH = '../gbmTCGA_exprMat_medianFiltered.tsv'
 ALL_RATIOS_PATH = 'expression/gbmTCGA_exprMat.tsv'
 CMONKEY2_RUNDB = '../out/cmonkey_run.db'
+PHENOTYPES_PATH = 'extras/phenotypes.csv'
+
 REPLICATION_DATASET_NAMES = ['French','REMBRANDT','GSE7696']
-CM_PKL_PATH = 'output/c1_all.pkl'
 
 MOTIF_FILES = ['motifs/jasparCoreVertebrata_redundant.json',
                'motifs/transfac_2012.1_PSSMs_vertabrate.json',
@@ -100,12 +93,6 @@ MOTIF_FILES = ['motifs/jasparCoreVertebrata_redundant.json',
                'motifs/selexPSSMsNonRedundant.json']
 
 
-CLUSTER_GENES_PATH = 'output/cluster.members.genes.txt'
-CLUSTER_CONDS_PATH = 'output/cluster.members.conditions.txt'
-CLUSTER_EIGENGENES_PATH = 'output/biclusterEigengenes.csv'
-CLUSTER_VARIANCE_EXPLAINED_PATH = 'output/biclusterVarianceExplained.csv'
-PHENOTYPES_PATH = 'extras/phenotypes.csv'
-POSTPROCESS_PKL_PATH = 'output/postProcessed.pkl'
 
 # global state for concurrent operations
 g_weeder_args        = None
@@ -156,7 +143,7 @@ def meme(num, seqfile, bgfile, nmotifs, min_motif_width, max_motif_width, revcom
             for j in range(width):
                 i += 1
                 matrix += [[float(let) for let in output[i].strip().split(' ') if let]]
-            PSSMs.append(PSSM('%s_motif%s_meme' % ((seqfile.split('_')[1]).split('.')[0], desc_comps[1]),
+            PSSMs.append(PSSM('%s_motif%s_meme' % (os.path.basename(seqfile).split('_')[1].split('.')[0], desc_comps[1]),
                               sites, evalue, matrix, [], 'meme'))
     g_cluster_meme_runs[num] = PSSMs
 
@@ -247,7 +234,7 @@ def weeder(bicluster, seqfile, bgfile, size, enriched, revcomp):
         if not outLine.find('Interesting motifs (highest-ranking)') == -1:
             break
     motif_id = 1
-    bicluster_id = int(seqfile.split('_')[1].split('.')[0])
+    bicluster_id = int(os.path.basename(seqfile).split('_')[1].split('.')[0])
     while 1:
         if len(outLines)<=1:
             break
@@ -374,12 +361,6 @@ def compareMiRNANames(a, b):
     return 0
 
 
-def sygnal_init():
-    """Preparing directories for output"""
-    if not os.path.exists('output'):
-        os.makedirs('output')
-
-
 def is_number(s):
     try:
         float(s)
@@ -427,9 +408,9 @@ def miRNA_mappings():
     return mirna_ids, mirna_ids_rev
 
 
-def read_cmonkey_run(path):
+def read_cmonkey_run(cfg, path):
     """ Load cMonkey Object - turns cMonkey data into objects"""
-    output_path = 'output/c1.pkl'
+    output_path = cfg.outdir_path('c1.pkl')
 
     # If this is the first time then load from the RData file
     if not os.path.exists(output_path):
@@ -451,7 +432,7 @@ def read_cmonkey_run(path):
     return c1
 
 
-def compute_upstream_motifs_meme(c1):
+def compute_upstream_motifs_meme(cfg, c1):
     """
     A. Upstream motifs (MEME) ##
     If MEME hasn't been run on the biclusters upstream sequences then do so
@@ -460,13 +441,12 @@ def compute_upstream_motifs_meme(c1):
 
     if not c1.meme_upstream:
         print 'Running MEME on Upstreams:'
+        pkl_path = cfg.outdir_path('meme_upstream.pkl')
         # Use already run MEME results if they exist
-        if not os.path.exists('output/meme_upstream.pkl'):
+        if not os.path.exists(pkl_path):
             # Make needed directories
-            if os.path.exists('tmp'):
-                rmtree('tmp')
-            if not os.path.exists('tmp/meme/fasta'):
-                os.makedirs('tmp/meme/fasta')
+            cfg.clear_tmp()
+            cfg.create_tmpdir('meme/fasta')
 
             # Run MEME on all biclusters
             mgr = Manager()
@@ -477,7 +457,7 @@ def compute_upstream_motifs_meme(c1):
             for cluster_num in c1.biclusters:
                 seqs = c1.bicluster_seqs_upstream(cluster_num)
                 if len(seqs) > 0:
-                    cluster_filename = 'tmp/meme/fasta/bicluster_%d.fasta' % cluster_num
+                    cluster_filename = cfg.tmpdir_path('meme/fasta/bicluster_%d.fasta' % cluster_num)
                     run_args.append((cluster_num, cluster_filename))
                     with open(cluster_filename, 'w') as outfile:
                         outfile.write('\n'.join(['>'+gene+'\n'+seqs[gene] for gene in seqs]))
@@ -499,12 +479,12 @@ def compute_upstream_motifs_meme(c1):
             pool.join()
 
             # Dump weeder results as a pickle file
-            with open('output/meme_upstream.pkl','wb') as pklFile:
-                cPickle.dump(deepcopy(g_cluster_meme_runs), pklFile)
+            with open(pkl_path, 'wb') as outfile:
+                cPickle.dump(deepcopy(g_cluster_meme_runs), outfile)
         else:
             print 'Loading from precached object...'
-            with open('output/meme_upstream.pkl','rb') as pklFile:
-                g_cluster_meme_runs = cPickle.load(pklFile)
+            with open(pkl_path, 'rb') as outfile:
+                g_cluster_meme_runs = cPickle.load(outfile)
 
         # Add PSSMs to cMonkey object
         print 'Storing output...'
@@ -520,16 +500,14 @@ def compute_upstream_motifs_meme(c1):
         c1.meme_upstream = True
 
 
-def __compute_motifs_weeder(resultpath, biclusters, add_result, bicluster_seqs, args_dict):
+def __compute_motifs_weeder(cfg, pkl_path, biclusters, add_result, bicluster_seqs, args_dict):
     """Generic motif detection function with weeder
     """
     global g_weeder_args, g_weeder_results
 
-    if not os.path.exists(resultpath):
-        if os.path.exists('tmp'):
-            rmtree('tmp')
-        if not os.path.exists('tmp/weeder/fasta'):
-            os.makedirs('tmp/weeder/fasta')
+    if not os.path.exists(pkl_path):
+        cfg.clear_tmp()
+        cfg.create_tmpdir('weeder/fasta')
 
         # Run MEME on all biclusters
         mgr = Manager()
@@ -539,7 +517,7 @@ def __compute_motifs_weeder(resultpath, biclusters, add_result, bicluster_seqs, 
         for cluster_num in biclusters:
             seqs = bicluster_seqs(cluster_num)
             if len(seqs) > 0:
-                cluster_filename = 'tmp/weeder/fasta/bicluster_%d.fasta' % cluster_num
+                cluster_filename = cfg.tmpdir_path('weeder/fasta/bicluster_%d.fasta' % cluster_num)
                 run_args.append((cluster_num, cluster_filename))                    
                 with open(cluster_filename, 'w') as outfile:
                     outfile.write('\n'.join(['>'+gene+'\n'+seqs[gene] for gene in seqs]))
@@ -559,12 +537,12 @@ def __compute_motifs_weeder(resultpath, biclusters, add_result, bicluster_seqs, 
         pool.join()
 
         # Dump weeder results as a pickle file
-        with open(resultpath,'wb') as outfile:
+        with open(pkl_path,'wb') as outfile:
             cPickle.dump(deepcopy(g_weeder_results), outfile)
 
     else:
         print 'Loading from precached object...'
-        with open(resultpath,'rb') as infile:
+        with open(pkl_path,'rb') as infile:
             g_weeder_results = cPickle.load(infile)
 
     print 'Storing output...'
@@ -574,9 +552,9 @@ def __compute_motifs_weeder(resultpath, biclusters, add_result, bicluster_seqs, 
             add_result(i, p)
 
 
-def compute_upstream_motifs_weeder(c1):
+def compute_upstream_motifs_weeder(cfg, c1):
     if not c1.weeder_upstream:
-        __compute_motifs_weeder('output/weeder_upstream.pkl',
+        __compute_motifs_weeder(cfg, cfg.outdir_path('weeder_upstream.pkl'),
                                 c1.biclusters,
                                 lambda bi, p: c1.biclusters[bi].add_pssm_upstream(p),
                                 lambda bi: c1.bicluster_seqs_upstream(bi),
@@ -585,9 +563,9 @@ def compute_upstream_motifs_weeder(c1):
         c1.weeder_upstream = True
 
 
-def compute_3pUTR_weeder(c1):
+def compute_3pUTR_weeder(cfg, c1):
     if not c1.weeder_3pUTR:
-        __compute_motifs_weeder('output/weeder_3pUTR.pkl',
+        __compute_motifs_weeder(cfg, cfg.outdir_path('weeder_3pUTR.pkl'),
                                 c1.biclusters,
                                 lambda bi, p: c1.biclusters[bi].add_pssm_3putr(p),
                                 lambda bi: c1.bicluster_seqs_3putr(bi),
@@ -708,10 +686,10 @@ def __compute_enrichment(c1, name,  pkl_path, pred_path, pred_pkl_path):
     return result
 
 
-def compute_tfbsdb_enrichment(c1):
+def compute_tfbsdb_enrichment(cfg, c1):
     """D. Upstream TFBS DB enrichment Analysis"""
     if not c1.tfbs_db:
-        res1 = __compute_enrichment(c1, 'TFBS_DB', 'output/tfbs_db.pkl',
+        res1 = __compute_enrichment(c1, 'TFBS_DB', cfg.outdir_path('tfbs_db.pkl'),
                                     'TF/tfbsDb_5000_gs.csv.gz',
                                     'TF/tfbs_db.pkl')
 
@@ -725,10 +703,10 @@ def compute_tfbsdb_enrichment(c1):
         c1.tfbs_db = True
 
 
-def compute_3pUTR_pita_set_enrichment(c1, mirna_ids):
+def compute_3pUTR_pita_set_enrichment(cfg, c1, mirna_ids):
     """E. 3' UTR PITA"""
     if not c1.pita_3pUTR:
-        res1 = __compute_enrichment(c1, 'PITA', 'output/pita_3pUTR.pkl',
+        res1 = __compute_enrichment(c1, 'PITA', cfg.outdir_path('pita_3pUTR.pkl'),
                                     'miRNA/pita_miRNA_sets_geneSymbol.csv.gz',
                                     'miRNA/pita.pkl')
 
@@ -747,10 +725,10 @@ def compute_3pUTR_pita_set_enrichment(c1, mirna_ids):
         c1.pita_3pUTR = True
 
 
-def compute_3pUTR_targetscan_set_enrichment(c1, mirna_ids):
+def compute_3pUTR_targetscan_set_enrichment(cfg, c1, mirna_ids):
     """F. 3' UTR TargetScan"""
     if not c1.targetscan_3pUTR:
-        res1 = __compute_enrichment(c1, 'TargetScan', 'output/targetscan_3pUTR.pkl',
+        res1 = __compute_enrichment(c1, 'TargetScan', cfg.outdir_path('targetscan_3pUTR.pkl'),
                                     'miRNA/targetscan_miRNA_sets_geneSymbol.csv.gz',
                                     'miRNA/targetScan.pkl')
 
@@ -768,9 +746,10 @@ def compute_3pUTR_targetscan_set_enrichment(c1, mirna_ids):
         c1.targetscan_3pUTR = True
 
 
-def compute_additional_info(mirna_ids):
-    if not os.path.exists(CM_PKL_PATH):
-        c1 = read_cmonkey_run(CMONKEY2_RUNDB)
+def compute_additional_info(cfg, mirna_ids):
+    cm_pkl_path = cfg.outdir_path('c1_all.pkl')
+    if not os.path.exists(cm_pkl_path):
+        c1 = read_cmonkey_run(cfg, CMONKEY2_RUNDB)
 
         ################################################################
         ## Fill in the missing parts                                  ##
@@ -784,18 +763,18 @@ def compute_additional_info(mirna_ids):
         #   F. 3' UTR TargetScan (Set Enrichment)                      #
         ################################################################
 
-        compute_upstream_motifs_meme(c1)
-        compute_upstream_motifs_weeder(c1)
-        compute_3pUTR_weeder(c1)
-        compute_tfbsdb_enrichment(c1)
-        compute_3pUTR_pita_set_enrichment(c1, mirna_ids)
-        compute_3pUTR_targetscan_set_enrichment(c1, mirna_ids)
+        compute_upstream_motifs_meme(cfg, c1)
+        compute_upstream_motifs_weeder(cfg, c1)
+        compute_3pUTR_weeder(cfg, c1)
+        compute_tfbsdb_enrichment(cfg, c1)
+        compute_3pUTR_pita_set_enrichment(cfg, c1, mirna_ids)
+        compute_3pUTR_targetscan_set_enrichment(cfg, c1, mirna_ids)
 
-        with open(CM_PKL_PATH, 'wb') as outfile:
+        with open(cm_pkl_path, 'wb') as outfile:
             cPickle.dump(c1, outfile)
     else:
         print 'Loading prechached cMonkey Object (c1_all.pkl):'
-        with open(CM_PKL_PATH, 'rb') as infile:
+        with open(cm_pkl_path, 'rb') as infile:
             c1 = cPickle.load(infile)
     return c1
 
@@ -855,21 +834,23 @@ def __read_ratios(path, c1):
             ratios[comps[0].strip('"')] = dict(zip(conditions, comps[1:]))
 
     print "dump cluster row members"
-    with open(CLUSTER_GENES_PATH, 'w') as outfile:
+
+    with open(cfg.outdir_path('cluster.members.genes.txt'), 'w') as outfile:
         for cluster_num in c1.biclusters:
             outfile.write('%s %s\n' % (cluster_num, ' '.join(c1.biclusters[cluster_num].genes))) 
 
     print "dump cluster condition members"
-    with open(CLUSTER_CONDS_PATH, 'w') as outfile:
+    with open(cfg.outdir_path('cluster.members.conditions.txt'), 'w') as outfile:
         for cluster_num in c1.biclusters:
             outfile.write('%s %s\n' % (cluster_num, ' '.join(c1.biclusters[cluster_num].conditions)))
     return ratios
 
 
-def __get_cluster_eigengenes(ratios_path, c1):
+def __get_cluster_eigengenes(cfg, ratios_path, c1):
     # Calculate bicluster eigengene (first principal components)
     print "compute bicluster eigengenes"
-    if not os.path.exists(CLUSTER_EIGENGENES_PATH):
+    cluster_eigengenes_path = cfg.outdir_path('biclusterEigengenes.csv')
+    if not os.path.exists(cluster_eigengenes_path):
         ret = subprocess.check_call(['./getEigengene.R',
                                      '-r', ratios_path,
                                      '-o', 'output'],
@@ -880,7 +861,7 @@ def __get_cluster_eigengenes(ratios_path, c1):
 
     # Read in bicluster eigengene
     print "read bicluster eigengenes"
-    with open(CLUSTER_EIGENGENES_PATH, 'r') as infile:
+    with open(cluster_eigengenes_path, 'r') as infile:
         patients = [i.strip('"') for i in infile.readline().strip().split(',')]
         patients.pop(0) # Get rid of rowname placeholder
 
@@ -891,9 +872,9 @@ def __get_cluster_eigengenes(ratios_path, c1):
             bicluster.add_attribute('pc1', dict(zip(patients, eigengene)))
 
 
-def __get_cluster_variance_explained(variance_explained_path, c1):
+def __get_cluster_variance_explained(cfg, c1):
     print "read bicluster variance explained"
-    with open(CLUSTER_VARIANCE_EXPLAINED_PATH, 'r') as infile:
+    with open(cfg.outdir_path('biclusterVarianceExplained.csv'), 'r') as infile:
         infile.readline() # Get rid of header
         for line in infile:
             varExplained = line.strip().split(',')
@@ -947,22 +928,21 @@ def __do_postprocess(postprocess_pkl_path, c1, ratios, phenotypes):
                 bicluster.add_attribute(attribute, entry[attribute])
 
 
-def __tomtom_upstream_motifs():
+def __tomtom_upstream_motifs(cfg):
     #################################################################
     ## TomTom Upstream motifs versus Jaspar and Transfac           ##
     #################################################################
     print 'Running TOMTOM on Upstream Motifs:'
-    # Make needed directories
-    if os.path.exists('tmp'):
-        rmtree('tmp')
 
-    if not os.path.exists('tmp/tomtom_out'):
-        os.makedirs('tmp/tomtom_out')
+    # Make needed directories
+    cfg.clear_tmp()
+    cfg.create_tmpdir('tomtom_out')
+
     pssms = c1.pssms_upstream()
     upstreamMatches = {}
 
-    comparison_pkl_path = 'output/upstreamJasparTransfacComparison.pkl'
-    comparison_csv_path = 'output/upstreamComparison_jaspar_transfac.csv'
+    comparison_pkl_path = cfg.outdir_path('upstreamJasparTransfacComparison.pkl')
+    comparison_csv_path = cfg.outdir_path('upstreamComparison_jaspar_transfac.csv')
 
     target_pssms_in = []
     for motif_file in MOTIF_FILES:
@@ -993,7 +973,7 @@ def __tomtom_upstream_motifs():
             print 'Reading in Tomtom run...'
             output_lines = []
             for i in range(len(target_pssms_in)):
-                with open('tmp/tomtom_out/tomtom%d.out' % i, 'r') as tomtom_outfile:
+                with open(cfg.tmpdir_path('tomtom_out/tomtom%d.out' % i), 'r') as tomtom_outfile:
                     tomtom_outfile.readline()  # skip header
                     output_lines += [line.strip().split('\t') for line in tomtom_outfile
                                     if float(line.split('\t')[5]) <= 0.05]
@@ -1169,7 +1149,7 @@ def __expand_and_correlate_tfbsdb_tfs(c1, tf_name2entrezid, tf_families, exp_dat
     print 'Done.\n'
 
 
-def __write_first_principal_components(c1):
+def __write_first_principal_components(cfg, c1):
     print 'Write biclusterFirstPrincComponents.csv...'
     # Get all first principal components for each bicluster
     fpcWrite = []
@@ -1179,26 +1159,25 @@ def __write_first_principal_components(c1):
         fpcWrite.append(str(i)+','+','.join([str(pc1[j]) for j in conditions]))
 
     # Dump out file
-    with open(os.path.join('output', FPC_FILENAME), 'w') as outfile:
+    with open(cfg.outdir_path(FPC_FILENAME), 'w') as outfile:
         outfile.write('Bicluster,'+','.join([j.strip() for j in conditions])+'\n')
         outfile.write('\n'.join(fpcWrite))
     print 'Done.\n'
 
 
-def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
-    # Make needed directories
-    if os.path.exists('tmp'):
-        rmtree('tmp')
-    if not os.path.exists('tmp/tomtom_out'):
-        os.makedirs('tmp/tomtom_out')
+def __get_permuted_pvalues_for_upstream_meme_motifs(cfg, c1):
+    cfg.clear_tmp()
+    cfg.create_tmpdir('tomtom_out')
     
     # Compare the random motifs to the original motif in TOMTOM
     permPValues = {}
     pssms = c1.pssms_upstream(de_novo_method='meme')
-    if not os.path.exists('output/upstreamMotifPermutedPValues.csv'):
-        outFile = open('output/upstreamMotifPermutedPValues.csv','w')
+    output_path = cfg.outdir_path('upstreamMotifPermutedPValues.csv')
+    if not os.path.exists(output_path):
+        outFile = open(output_path, 'w')
         outFile.write('Motif Name,Region,Original E-Value,Consensus,Permuted E-Value < 10,Similar,Total Permutations,Permuted P-Value')
         pssmsNames = pssms.keys()
+        print pssmsNames
         print 'Loading precached random PSSMs...'
         randPssmsDict = {}
         for i in range(5, 70, 5):  # [5,10,15,... ,65]:
@@ -1234,12 +1213,12 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
         print 'Reading in Tomtom run...'
         for run in range(len(pssms)):
             tomtomPValues = {}
-            outputFile = open('tmp/tomtom_out/tomtom'+str(run)+'.out','r')
-            output = outputFile.readlines()
-            outputFile.close()
+            with open(cfg.tmpdir_path('tomtom_out/tomtom%d.out' % run), 'r') as infile:
+                output = infile.readlines()
+
             # Now iterate through output and save data
             output.pop(0) # Get rid of header
-            while len(output)>0:
+            while len(output) > 0:
                 outputLine = output.pop(0).strip().split('\t')
                 if len(outputLine)==10:
                     tomtomPValues[outputLine[1]] = float(outputLine[3])
@@ -1248,6 +1227,7 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
             for pValue in pValues:
                 if float(pValue) <= float(0.05):
                     similar += 1
+
             # Write out the results
             mot = outputLine[0].split('_')[1]
             permPValues[outputLine[0]] = { mot + '.consensus': pssm_mod.consensus_motif(pssms[outputLine[0]]),
@@ -1259,71 +1239,74 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(c1):
         outFile.close()
     else:
         print 'Using precalculated upstream p-values...'
-        inFile = open('output/upstreamMotifPermutedPValues.csv','r')
-        inFile.readline()
-        upPValues = [i.strip().split(',') for i in inFile.readlines()]
-        inFile.close()
+        with open(output_path, 'r') as infile:
+            infile.readline()
+            upPValues = [line.strip().split(',') for line in infile]
+
         for line in upPValues:
             pssms[line[0]].permuted_pvalue = float(line[7]) / 1000.0
     print 'Done.\n'
 
 
-def __run_mirvestigator_3putr(c1):
+def __run_mirvestigator_3putr(cfg, c1):
     """Compare 3' UTR Weeder Motifs to miRBase using miRvestigator"""
     print 'Running miRvestigator on 3\' UTR Motifs:'
-    if not os.path.exists('output/m2m.pkl'):
+    pkl_path = cfg.outdir_path('m2m.pkl')
+    if not os.path.exists(pkl_path):
         print 'Computing miRNA matches...'
         pssms = c1.pssms_3putr()
         seqs3pUTR = c1.seqs3pUTR.values()
         m2m = miRvestigator(pssms.values(), seqs3pUTR, seedModel=[6, 7, 8],
                             minor=True, p5=True, p3=True, wobble=False,
                             wobbleCut=0.25, baseDir='output', species='mmu')
-        with open('output/m2m.pkl','wb') as pklFile:
-            cPickle.dump(m2m,pklFile)
+        with open(pkl_path, 'wb') as outfile:
+            cPickle.dump(m2m, outfile)
     else:
         print 'Loading precached miRNA matches...'
-        with open('output/m2m.pkl','rb') as pklFile:
-            m2m = cPickle.load(pklFile)
+        with open(pkl_path, 'rb') as infile:
+            m2m = cPickle.load(infile)
     print 'Done.\n'
 
 
-def __convert_mirvestigator_3putr_results(c1, mirna_ids):
+def __convert_mirvestigator_3putr_results(cfg, c1, mirna_ids):
     """Convert miRNAs and Get permuted p-values for 3' UTR motifs"""
 
     pssms = c1.pssms_3putr()
     print 'Loading miRvestigator results...'
     # Convert miRvestigator results
-    if not os.path.exists('output/miRvestigatorResults.pkl'):
-        inFile = open('output/miRNA/scores.csv','r')
-        inFile.readline() # get rid of header
-        lines = [i.strip().split(',') for i in inFile.readlines()]
+    pkl_path = cfg.outdir_path('miRvestigatorResults.pkl')
+    if not os.path.exists(pkl_path):
+        with open(cfg.outdir_path('miRNA/scores.csv'), 'r') as infile:
+            infile.readline()  # get rid of header
+            lines = [i.strip().split(',') for i in infile.readlines()]
+
         miRNA_matches = {}
         for line in lines:
-            if not line[1]=='NA':
+            if not line[1] == 'NA':
                 miRNA_mature_seq_ids = []
                 for i in line[1].split('_'):
                     miRNA_mature_seq_ids += utils.mirna_in_dict(i.lower(), mirna_ids)
                 miRNA_matches[line[0]] = {'miRNA':line[1],'model':line[2],'mature_seq_ids':miRNA_mature_seq_ids}
                 for m1 in miRNA_mature_seq_ids:
                     pssms[line[0]].add_match(factor=m1, confidence=line[2])
-        with open('output/miRvestigatorResults.pkl','wb') as pklFile:
-            cPickle.dump(miRNA_matches, pklFile)
+
+        with open(pkl_path, 'wb') as outfile:
+            cPickle.dump(miRNA_matches, outfile)
     else:
-        with open('output/miRvestigatorResults.pkl','rb') as pklFile:
-            miRNA_matches = cPickle.load(pklFile)
+        with open(pkl_path, 'rb') as infile:
+            miRNA_matches = cPickle.load(infile)
             for m1 in miRNA_matches:
                 for m2 in miRNA_matches[m1]['mature_seq_ids']:
-                    #print m1, m2, miRNA_matches
                     pssms[m1].add_match(factor=m2, confidence=miRNA_matches[m1]['model'])
 
     # Compile results to put them into the postProcessed
     print 'Get perumted p-values for 3\' UTR motifs...'
-    pklFile = open('randPSSMs/weederRand.pkl','rb')
-    weederRand = cPickle.load(pklFile)
-    pklFile.close()
-    pklFile = open('randPSSMs/weederRand_all.pkl','rb')
-    weederRand_all = cPickle.load(pklFile)
-    pklFile.close()
+    with open('randPSSMs/weederRand.pkl', 'rb') as infile:
+        weederRand = cPickle.load(infile)
+
+    with open('randPSSMs/weederRand_all.pkl', 'rb') as infile:
+        weederRand_all = cPickle.load(infile)
+
     clustSizes = sorted(weederRand['8bp'].keys())
     for pssm1 in pssms:
         seqNum = pssms[pssm1].num_genes()
@@ -1356,16 +1339,16 @@ def run_replication(rep_script):
         raise Exception('could not run replication - check dependencies')
 
 
-def __make_replication_pvalues(c1):
+def __make_replication_pvalues(cfg, c1):
     # Dump a file containing all the genes for each cluster
-    with open('output/cluster.members.genes.txt','w') as cmgFile:
+    with open(cfg.outdir_path('cluster.members.genes.txt'), 'w') as cmgFile:
         writeMe = []
         for cluster_num, bicluster in c1.biclusters.items():
             writeMe.append(str(cluster_num) + ' ' + ' '.join(bicluster.genes))
         cmgFile.write('\n'.join(writeMe))
 
     # Dump a file containing all the genes for each cluster
-    with open('output/cluster.members.conditions.txt','w') as cmcFile:
+    with open(cfg.outdir_path('cluster.members.conditions.txt'), 'w') as cmcFile:
         writeMe = []
         for cluster_num, bicluster in c1.biclusters.items():
             writeMe.append(str(cluster_num) + ' ' + ' '.join(bicluster.conditions))
@@ -1373,7 +1356,7 @@ def __make_replication_pvalues(c1):
 
     # Run replication on all datasets
     run_sets = [name for name in REPLICATION_DATASET_NAMES
-                if not os.path.exists('output/replicationPvalues_%s.csv' % name)]
+                if not os.path.exists(cfg.outdir_path('replicationPvalues_%s.csv' % name))]
 
     if len(run_sets) > 0:
         print 'Run replication..'
@@ -1386,53 +1369,46 @@ def __make_replication_pvalues(c1):
         pool.join()
 
 
-def __read_replication_pvalues(c1):
+def __read_replication_pvalues(cfg, c1):
     # Read in replication p-values - French Dataset      
     # '','n.rows','overlap.rows','new.resid.norm.gbm','avg.norm.perm.resid.gbm','norm.perm.p.gbm','new.resid.norm.all','avg.norm.perm.resid.all','norm.perm.p.all','pc1.var.exp.gbm','avg.pc1.var.exp.gbm','pc1.perm.p.gbm','pc1.var.exp.all','avg.pc1.var.exp.all','pc1.perm.p.all','survival.gbm','survival.p.gbm','survival.age.gbm','survival.age.p.gbm','survival.all','survival.p.all','survival.age.all','survival.age.p.all'
     print 'Loading replication p-values...'
-    inFile = open('output/replicationPvalues_French.csv','r')
-    inFile.readline()
-    while 1:
-        line = inFile.readline()
-        if not line:
-            break
-        splitUp = line.strip().split(',')
-        bicluster = c1.biclusters[int(splitUp[0].replace('"',''))]
-        bicluster.add_attribute(key='replication_French',value={'French_new.resid.norm':splitUp[3], 'French_avg.resid.norm':splitUp[4], 'French_norm.perm.p':splitUp[5], 'French_pc1.var.exp':splitUp[9], 'French_avg.pc1.var.exp':splitUp[10], 'French_pc1.perm.p':splitUp[11], 'French_survival':splitUp[15], 'French_survival.p':splitUp[16], 'French_survival.age':splitUp[17], 'French_survival.age.p':splitUp[18]})
-        bicluster.add_attribute(key='replication_French_all',value={'French_all_new.resid.norm':splitUp[6], 'French_all_avg.resid.norm':splitUp[7], 'French_all_norm.perm.p':splitUp[8], 'French_all_pc1.var.exp':splitUp[12], 'French_all_avg.pc1.var.exp':splitUp[13], 'French_all_pc1.perm.p':splitUp[14], 'French_all_survival':splitUp[19], 'French_all_survival.p':splitUp[20], 'French_all_survival.age':splitUp[21], 'French_all_survival.age.p':splitUp[22]})
-    inFile.close()
+    with open(cfg.outdir_path('replicationPvalues_French.csv'), 'r') as infile:
+        infile.readline()
+        for line in infile:
+            splitUp = line.strip().split(',')
+            bicluster = c1.biclusters[int(splitUp[0].replace('"',''))]
+            bicluster.add_attribute(key='replication_French',value={'French_new.resid.norm':splitUp[3], 'French_avg.resid.norm':splitUp[4], 'French_norm.perm.p':splitUp[5], 'French_pc1.var.exp':splitUp[9], 'French_avg.pc1.var.exp':splitUp[10], 'French_pc1.perm.p':splitUp[11], 'French_survival':splitUp[15], 'French_survival.p':splitUp[16], 'French_survival.age':splitUp[17], 'French_survival.age.p':splitUp[18]})
+            bicluster.add_attribute(key='replication_French_all',value={'French_all_new.resid.norm':splitUp[6], 'French_all_avg.resid.norm':splitUp[7], 'French_all_norm.perm.p':splitUp[8], 'French_all_pc1.var.exp':splitUp[12], 'French_all_avg.pc1.var.exp':splitUp[13], 'French_all_pc1.perm.p':splitUp[14], 'French_all_survival':splitUp[19], 'French_all_survival.p':splitUp[20], 'French_all_survival.age':splitUp[21], 'French_all_survival.age.p':splitUp[22]})
+
     # Read in replication p-values - REMBRANDT Dataset      
     # "","n.rows","orig.resid","orig.resid.norm","overlap.rows","new.resid","avg.perm.resid","perm.p","new.resid.norm","avg.norm.perm.resid","norm.perm.p","survival","survival.p","survival.age","survival.age.p"
-    inFile = open('output/replicationPvalues_REMBRANDT.csv','r')
-    inFile.readline()
-    while 1:
-        line = inFile.readline()
-        if not line:
-            break
-        splitUp = line.strip().split(',')
-        bicluster = c1.biclusters[int(splitUp[0].replace('"',''))]
-        bicluster.add_attribute(key='replication_REMBRANDT',value={'REMBRANDT_new.resid.norm':splitUp[3], 'REMBRANDT_avg.resid.norm':splitUp[4], 'REMBRANDT_norm.perm.p':splitUp[5], 'REMBRANDT_pc1.var.exp':splitUp[9], 'REMBRANDT_avg.pc1.var.exp':splitUp[10], 'REMBRANDT_pc1.perm.p':splitUp[11], 'REMBRANDT_survival':splitUp[15], 'REMBRANDT_survival.p':splitUp[16], 'REMBRANDT_survival.age':splitUp[17], 'REMBRANDT_survival.age.p':splitUp[18]})
-        bicluster.add_attribute(key='replication_REMBRANDT_all',value={'REMBRANDT_all_new.resid.norm':splitUp[6], 'REMBRANDT_all_avg.resid.norm':splitUp[7], 'REMBRANDT_all_norm.perm.p':splitUp[8], 'REMBRANDT_all_pc1.var.exp':splitUp[12], 'REMBRANDT_all_avg.pc1.var.exp':splitUp[13], 'REMBRANDT_all_pc1.perm.p':splitUp[14], 'REMBRANDT_all_survival':splitUp[19], 'REMBRANDT_all_survival.p':splitUp[20], 'REMBRANDT_all_survival.age':splitUp[21], 'REMBRANDT_all_survival.age.p':splitUp[22]})
+    with open(cfg.outdir_path('replicationPvalues_REMBRANDT.csv'), 'r') as infile:
+        infile.readline()
+        for line in infile:
+            splitUp = line.strip().split(',')
+            bicluster = c1.biclusters[int(splitUp[0].replace('"',''))]
+            bicluster.add_attribute(key='replication_REMBRANDT',value={'REMBRANDT_new.resid.norm':splitUp[3], 'REMBRANDT_avg.resid.norm':splitUp[4], 'REMBRANDT_norm.perm.p':splitUp[5], 'REMBRANDT_pc1.var.exp':splitUp[9], 'REMBRANDT_avg.pc1.var.exp':splitUp[10], 'REMBRANDT_pc1.perm.p':splitUp[11], 'REMBRANDT_survival':splitUp[15], 'REMBRANDT_survival.p':splitUp[16], 'REMBRANDT_survival.age':splitUp[17], 'REMBRANDT_survival.age.p':splitUp[18]})
+            bicluster.add_attribute(key='replication_REMBRANDT_all',value={'REMBRANDT_all_new.resid.norm':splitUp[6], 'REMBRANDT_all_avg.resid.norm':splitUp[7], 'REMBRANDT_all_norm.perm.p':splitUp[8], 'REMBRANDT_all_pc1.var.exp':splitUp[12], 'REMBRANDT_all_avg.pc1.var.exp':splitUp[13], 'REMBRANDT_all_pc1.perm.p':splitUp[14], 'REMBRANDT_all_survival':splitUp[19], 'REMBRANDT_all_survival.p':splitUp[20], 'REMBRANDT_all_survival.age':splitUp[21], 'REMBRANDT_all_survival.age.p':splitUp[22]})
+
     # Read in replication p-values - GSE7696 Dataset
     # '', 'n.rows','overlap.rows','new.resid.norm.gbm','avg.norm.perm.resid.gbm','norm.perm.p.gbm','pc1.var.exp.gbm','avg.pc1.var.exp.gbm','pc1.perm.p.gbm','survival.gbm','survival.p.gbm','survival.age.gbm','survival.age.p.gbm'
-    inFile = open('output/replicationPvalues_GSE7696.csv','r')
-    inFile.readline()
-    while 1:
-        line = inFile.readline()
-        if not line:
-            break
-        splitUp = line.strip().split(',')
-        bicluster = c1.biclusters[int(splitUp[0].replace('"',''))]
-        bicluster.add_attribute(key='replication_GSE7696',value={'GSE7696_new.resid.norm':splitUp[3], 'GSE7696_avg.resid.norm':splitUp[4], 'GSE7696_norm.perm.p':splitUp[5], 'GSE7696_pc1.var.exp':splitUp[6], 'GSE7696_avg.pc1.var.exp':splitUp[7], 'GSE7696_pc1.perm.p':splitUp[8], 'GSE7696_survival':splitUp[9], 'GSE7696_survival.p':splitUp[10], 'GSE7696_survival.age':splitUp[11], 'GSE7696_survival.age.p':splitUp[12]})
-    inFile.close()
+    with open(cfg.outdir_path('replicationPvalues_GSE7696.csv'), 'r') as infile:
+        infile.readline()
+        for line in infile:
+            splitUp = line.strip().split(',')
+            bicluster = c1.biclusters[int(splitUp[0].replace('"',''))]
+            bicluster.add_attribute(key='replication_GSE7696',value={'GSE7696_new.resid.norm':splitUp[3], 'GSE7696_avg.resid.norm':splitUp[4], 'GSE7696_norm.perm.p':splitUp[5], 'GSE7696_pc1.var.exp':splitUp[6], 'GSE7696_avg.pc1.var.exp':splitUp[7], 'GSE7696_pc1.perm.p':splitUp[8], 'GSE7696_survival':splitUp[9], 'GSE7696_survival.p':splitUp[10], 'GSE7696_survival.age':splitUp[11], 'GSE7696_survival.age.p':splitUp[12]})
+
     print 'Done.\n'
 
 
-def __make_permuted_pvalues(c1):
+def __make_permuted_pvalues(cfg, c1):
     ###########################################################################
     ## Run permuted p-value for variance epxlained first principal component ##
     ###########################################################################
-    if not os.path.exists('output/residualPermutedPvalues_permAll.csv'):
+    pvalues_path = cfg.outdir_path('residualPermutedPvalues_permAll.csv')
+    if not os.path.exists(pvalues_path):
         print 'Calculating FPC permuted p-values...'
         ret = subprocess.check_call(['./permutedResidualPvalues_permAll_mc.R',
                                      '-b', '..'],
@@ -1447,11 +1423,10 @@ def __make_permuted_pvalues(c1):
     ## Read in residual permutations to use for filtering          ##
     #################################################################
     print 'Load residual permuted p-values...'
-    with open('output/residualPermutedPvalues_permAll.csv','r') as inFile:
+    with open(pvalues_path, 'r') as infile:
         # "","bicluster","n.rows","n.cols","orig.resid","avg.perm.resid","perm.p","orig.resid.norm","avg.norm.perm.resid","norm.perm.p","pc1.var.exp","avg.pc1.var.exp","pc1.perm.p"
-        inFile.readline()
-        inLines = inFile.readlines()
-        for line in inLines:
+        infile.readline()
+        for line in infile:
             splitUp = line.strip().split(',')
             bicluster = c1.biclusters[int(splitUp[0].strip('"'))]
             bicluster.add_attribute(key='resid.norm.perm.p',value=str(splitUp[9]))
@@ -1459,23 +1434,23 @@ def __make_permuted_pvalues(c1):
     print 'Done.\n'
 
 
-def __make_functional_enrichment_and_go_term_similarity(c1):
+def __make_functional_enrichment_and_go_term_similarity(cfg, c1):
     #################################################################
     ## Run functional enrichment and GO term similarity            ##
     #################################################################
     # Note that these are external to the project and have hard-coded paths !!!
-    if not os.path.exists('output/biclusterEnrichment_GOBP.csv'):
+    if not os.path.exists(cfg.outdir_path('biclusterEnrichment_GOBP.csv')):
         print 'Run functional enrichment...'
-        ret = subprocess.check_call("cd funcEnrichment && Rscript enrichment.R -o %s" % OUTPUT_DIR,
+        ret = subprocess.check_call("cd funcEnrichment && Rscript enrichment.R -o %s" % cfg.outdir,
                                     stderr=subprocess.STDOUT, shell=True)
         if ret == 1:
             raise Exception('could not run functional enrichment')
 
         print 'Done.\n'
 
-    if not os.path.exists('output/jiangConrath_hallmarks.csv'):
+    if not os.path.exists(cfg.outdir_path('jiangConrath_hallmarks.csv')):
         print 'Run semantic similarity...'
-        ret = subprocess.check_call("cd funcEnrichment && Rscript goSimHallmarksOfCancer.R -o %s" % OUTPUT_DIR,
+        ret = subprocess.check_call("cd funcEnrichment && Rscript goSimHallmarksOfCancer.R -o %s" % cfg.outdir,
                                     stderr=subprocess.STDOUT, shell=True)
         if ret == 1:
             raise Exception('could not run semantic similarity')
@@ -1486,10 +1461,9 @@ def __make_functional_enrichment_and_go_term_similarity(c1):
     ## Read in functional enrichment                               ##
     #################################################################
     print 'Load GO Biological Process functional enrichment...'
-    with open('output/biclusterEnrichment_GOBP.csv','r') as inFile:
-        inFile.readline() # Get rid of header
-        inLines = inFile.readlines()
-        lines = [line.strip().split(',') for line in inLines]
+    with open(cfg.outdir_path('biclusterEnrichment_GOBP.csv'), 'r') as infile:
+        infile.readline()  # Get rid of header
+        lines = [line.strip().split(',') for line in infile]
 
     for line in lines:
         bicluster = c1.biclusters[int(line[0].strip('"'))]
@@ -1497,78 +1471,77 @@ def __make_functional_enrichment_and_go_term_similarity(c1):
     print 'Done.\n'
 
 
-def __add_hallmarks_of_cancer(c1):
+def __add_hallmarks_of_cancer(cfg, c1):
     print 'Load Jiang-Conrath semantic similarity to Hallmarks of Cancer...'
-    with open('output/jiangConrath_hallmarks.csv','r') as inFile:
-        hallmarks = [i for i in inFile.readline().split(',') if not i.strip('"')=='']
-        inLines = inFile.readlines()
-        lines = [line.strip().split(',') for line in inLines]
+    with open(cfg.outdir_path('jiangConrath_hallmarks.csv'), 'r') as infile:
+        hallmarks = [i for i in infile.readline().split(',') if not i.strip('"')=='']
+        lines = [line.strip().split(',') for line in infile]
+
         for line in lines:
             bicluster = c1.biclusters[int(line[0].strip('"'))]
             bicluster.add_attribute(key='hallmarksOfCancer',value=dict(zip(hallmarks,line[1:])))
         print 'Done.\n'
 
 
-def __write_final_cmonkey_object(c1):
-    print 'Dumping Final cMonkey Object:'
-    with open('output/c1_postProc.pkl','wb') as pklFile:
-        cPickle.dump(c1, pklFile)
-    print 'Done.\n'
-
-def perform_postprocessing(c1, entrez2id, mirna_ids):
-    if not os.path.exists('output/c1_postProc.pkl'):
+def perform_postprocessing(cfg, c1, entrez2id, mirna_ids):
+    pkl_path = cfg.outdir_path('c1_postProc.pkl')
+    if not os.path.exists(pkl_path):
         ratios = __read_ratios(RATIOS_PATH, c1)
-        __get_cluster_eigengenes(RATIOS_PATH, c1)
-        __get_cluster_variance_explained(CLUSTER_VARIANCE_EXPLAINED_PATH, c1)
+        __get_cluster_eigengenes(cfg, RATIOS_PATH, c1)
+        __get_cluster_variance_explained(cfg, c1)
         phenotypes = __get_phenotype_info(PHENOTYPES_PATH, c1)
-        __do_postprocess(POSTPROCESS_PKL_PATH, c1, ratios, phenotypes)
-        __tomtom_upstream_motifs()
+        __do_postprocess(cfg.outdir_path('postProcessed.pkl'), c1, ratios, phenotypes)
+        __tomtom_upstream_motifs(cfg)
         tf_name2entrezid, tf_families = __expand_tf_factor_list(entrez2id)
         exp_data, all_names = __correlate_tfs_with_cluster_eigengenes(c1)
         __expand_and_correlate_tfbsdb_tfs(c1, tf_name2entrezid, tf_families,
                                           exp_data, all_names)
-        __write_first_principal_components(c1)
-        __get_permuted_pvalues_for_upstream_meme_motifs(c1)
-        __run_mirvestigator_3putr(c1)
-        __convert_mirvestigator_3putr_results(c1, mirna_ids)
-        __make_replication_pvalues(c1)
-        __read_replication_pvalues(c1)
-        __make_permuted_pvalues(c1)
-        __make_functional_enrichment_and_go_term_similarity(c1)
-        __add_hallmarks_of_cancer(c1)
-        __write_final_cmonkey_object(c1)
+        __write_first_principal_components(cfg, c1)
+        __get_permuted_pvalues_for_upstream_meme_motifs(cfg, c1)
+        __run_mirvestigator_3putr(cfg, c1)
+        __convert_mirvestigator_3putr_results(cfg, c1, mirna_ids)
+        __make_replication_pvalues(cfg, c1)
+        __read_replication_pvalues(cfg, c1)
+        __make_permuted_pvalues(cfg, c1)
+        __make_functional_enrichment_and_go_term_similarity(cfg, c1)
+        __add_hallmarks_of_cancer(cfg, c1)
+
+        print 'Dumping Final cMonkey Object:'
+        with open(pkl_path, 'wb') as outfile:
+            cPickle.dump(c1, outfile)
+        print 'Done.\n'
 
     else:
         print 'Loading from precached cMonkey Object:'
-        with open('output/c1_postProc.pkl','rb') as pklFile:
-            c1 = cPickle.load(pklFile)
+        with open(pkl_path, 'rb') as infile:
+            c1 = cPickle.load(infile)
         print 'Done.\n'
     return c1
 
 
-def run_neo():
+def run_neo(cfg):
     """Run NEO and integrate some form of results
     TODO: Make NEO run on subsets"""
-    if not os.path.exists('output/causality'):
+    if not os.path.exists(cfg.outdir_path('causality')):
         ## Run the runNEO.R script and do the causality analyses
         print '  Network edge orienting (NEO)...'
-        ret = subprocess.check_call("cd NEO && Rscript runNEO.R -b %s" % BASE_DIR,
+        ret = subprocess.check_call("cd NEO && Rscript runNEO.R -b %s" % cfg.basedir,
                                     stderr=subprocess.STDOUT, shell=True)
         if ret == 1:
             raise Exception('could not run causality analyses')
 
 
-def write_neo_summary():
+def write_neo_summary(cfg):
     ## Pull together analysis into cohesive output
     causalSummary = []
     # For each mutation
-    for dir1 in os.listdir('output/causality'):
+    for dir1 in os.listdir(cfg.outdir_path('causality')):
         # For each regulator
         if dir1[0:7]=='causal_':
             # For each 
-            for file1 in os.listdir('output/causality/'+dir1):
+            for file1 in os.listdir(cfg.outdir_path('causality/%s' % dir1)):
                 if file1[0:3]=='sm.':
-                    with open('output/causality/'+dir1+'/'+file1,'r') as inFile:
+                    with open(cfg.outdir_path('causality/%s/%s' % (dir1, file1)), 'r') as inFile:
                         inLine = inFile.readline() # Get rid of header
                         while 1:
                             inLine = inFile.readline()
@@ -1582,9 +1555,9 @@ def write_neo_summary():
 
     ## Output:  Somatic Mutation(1), Regulator(3), Biclster(5), leo.nb.AtoB(6), mlogp.M.AtoB(12), PathAB(17), SEPathAB(18), ZPathAB(19), PPathAB(20), BLV.AtoB(25), RMSEA.AtoB(28)
     header = ['Mutation', 'Regulator', 'Bicluster', 'leo.nb.AtoB', 'mlogp.M.AtoB', 'PathAB', 'SEPathAB', 'ZPathAB', 'PPathAB', 'BLV.AtoB', 'RMSEA.AtoB']
-    with open('output/causalitySummary.csv','w') as outFile:
-        outFile.write(','.join(header)+'\n')
-        outFile.write('\n'.join([','.join([i[j] for j in header]) for i in causalSummary]))
+    with open(cfg.outdir_path('causalitySummary.csv'), 'w') as outfile:
+        outfile.write(','.join(header)+'\n')
+        outfile.write('\n'.join([','.join([i[j] for j in header]) for i in causalSummary]))
     return causalSummary
 
 
@@ -1643,7 +1616,7 @@ def add_correspondent_regulators(c1, causal_summary, mirna_ids_rev):
         bicluster.add_attribute(key='correspondentRegulators', value=correspondentRegulators[cluster_num])
 
 
-def write_final_result(c1, mirna_ids_rev):
+def write_final_result(cfg, c1, mirna_ids_rev):
     #################################################################
     ## Write out the final post-processed file                     ##
     #################################################################
@@ -1930,7 +1903,7 @@ def write_final_result(c1, mirna_ids_rev):
         # Add to the final output file
         postOut.append(deepcopy(writeMe))
 
-    with open(os.path.join('output', POSTPROCESSED_FILENAME), 'w') as postFinal:
+    with open(cfg.outdir_path(POSTPROCESSED_FILENAME), 'w') as postFinal:
         header = ['Bicluster', 'Genes', 'Patients', 'Norm. Residual', 'Norm. Residual Perm. P-Value', 'Var. Exp. First PC', 'Var. Exp. First PC Perm. P-Value'] + \
          ['MEME Motif1 E-Value', 'MEME Motif1 Perm. P-Value', 'Up.MEME Motif1 Consensus', 'Up.MEME Motif1 Matches','Up.MEME Motif1 Expanded Matches', 'Up.MEME Motif1 Correlated Matches', 'Up.MEME Motif1 Original/Expanded', 'Up.MEME Motif1 Minimum Correlated'] + \
          ['Up.MEME Motif2 E-Value', 'Up.MEME Motif2 Perm. P-Value', 'Up.MEME Motif2 Consensus', 'Up.MEME Motif2 Matches', 'Up.MEME Motif2 Expanded Matches', 'Up.MEME Motif2 Correlated Matches', 'Up.MEME Motif2 Original/Expanded', 'Up.MEME Motif2 Minimum Correlated'] + \
@@ -1954,13 +1927,13 @@ def write_final_result(c1, mirna_ids_rev):
 
 
 if __name__ == '__main__':
-    # Initialize sygnal output directory and conversion dictionaries
-    sygnal_init()
+    cfg = config.sygnal_init()
+
     entrez2id = read_synonyms()
     mirna_ids, mirna_ids_rev = miRNA_mappings()
-    c1 = compute_additional_info(mirna_ids)
-    c1 = perform_postprocessing(c1, entrez2id, mirna_ids)
-    run_neo()
-    causal_summary = write_neo_summary()
+    c1 = compute_additional_info(cfg, mirna_ids)
+    c1 = perform_postprocessing(cfg, c1, entrez2id, mirna_ids)
+    run_neo(cfg)
+    causal_summary = write_neo_summary(cfg)
     add_correspondent_regulators(c1, causal_summary, mirna_ids_rev)
-    write_final_result(c1, mirna_ids_rev)
+    write_final_result(cfg, c1, mirna_ids_rev)
