@@ -96,53 +96,59 @@ ame	(Original Version)	--method mhg --scoring totalhits --verbose 1 --bgformat 2
 The SYGNAL pipeline is designed to be configured using the parameters starting at line 58 to 108 of sygnal.py. We will work to move the to a more convenient configuration file in the future.
 
 ```
-#### For MEME analysis
+# Setting up paths
+CURRENT_DIR = os.getcwd()
+BASE_DIR = os.path.dirname(os.getcwd()) + '/'
+OUTPUT_DIR = os.path.join(CURRENT_DIR, 'output')
+RAND_PSSMS_DIR = 'randPSSMs'
+
+# Data extracted from cMonkey2 run
+SYNONYM_PATH = '../synonymThesaurus.csv.gz'
+CMONKEY2_RUNDB = '../out/cmonkey_run.db'
+RATIOS_PATH = '../gbmTCGA_exprMat_medianFiltered.tsv'
+
+# Additional data needed for anlayses
+PHENOTYPES_PATH = 'extras/phenotypes.csv'
+MIRNA_FASTA_PATH = 'miRNA/hsa.mature.fa'
+ALL_RATIOS_PATH = 'expression/gbmTCGA_exprMat.tsv'
+REPLICATION_DATASET_NAMES = ['French','REMBRANDT','GSE7696']
+
+# For MEME analysis
 MEME_BGFILE       = 'seqs/bgFile.meme'
 MEME_NMOTIFS      = 2
 MEME_MOTIF_WIDTHS = {'upstream': [6, 12]}
 MEME_REVCOMP      = {'upstream': True}
-
-#### Parameters for filtering results
 MAX_EVALUE        = 10.0
-LEO_NB_ATOB       = 0.5  # Equates to ~3 times better model fit than next best model
-MLOGP_M_ATOB      = 0.05
-RHO_CUT           = 0.3
-PVALUE_CUT        = 0.05
-PERC_TARGETS      = 0.1
-POSTPROCESSED_FILENAME = 'postProcessed_gbmTCGA_pita.csv'
-FPC_FILENAME = 'biclusterFirstPrincComponents.csv'
-SUBSETS = ['all'] # Might be nice to include subtypes
-SUBSETS_POS = { 'all': [0,422] } # Might be nice to include subtypes
-RAND_PSSMS_DIR = 'randPSSMs'
 
-#### Detenrmine the working directories, we pass this to the
-#### external R scripts
-CURRENT_DIR = os.getcwd()
-#### note that we need to paste in the '/' at the end because the R scripts
-#### currently assume it
-BASE_DIR = os.path.dirname(os.getcwd()) + '/'
-OUTPUT_DIR = os.path.join(CURRENT_DIR, 'output')
-
-SYNONYM_PATH = '../synonymThesaurus.csv.gz'
-MIRNA_FASTA_PATH = 'miRNA/hsa.mature.fa'  # Need to update this to the latest database
-RATIOS_PATH = '../gbmTCGA_exprMat_medianFiltered.tsv'
-ALL_RATIOS_PATH = 'expression/gbmTCGA_exprMat.tsv'
-CMONKEY2_RUNDB = '../out/cmonkey_run.db'
-REPLICATION_DATASET_NAMES = ['French','REMBRANDT','GSE7696']
-CM_PKL_PATH = 'output/c1_all.pkl'
-
+# Motif comparison databases (JSON formatted)
 MOTIF_FILES = ['motifs/jasparCoreVertebrata_redundant.json',
                'motifs/transfac_2012.1_PSSMs_vertabrate.json',
                'motifs/uniprobePSSMsNonRedundant.json',
                'motifs/selexPSSMsNonRedundant.json']
 
+# NEO filtering parameters
+LEO_NB_ATOB       = 0.5  # Equates to ~3 times better model fit than next best model
+MLOGP_M_ATOB      = 0.05
 
+# Filtering parameters
+RHO_CUT           = 0.3
+PVALUE_CUT        = 0.05
+PERC_TARGETS      = 0.1
+
+# Subsets can be used when have different subsets in clinical data
+SUBSETS = ['all'] # Might be nice to include subtypes
+SUBSETS_POS = { 'all': [0,422] } # Might be nice to include subtypes
+
+# Output information
+FPC_FILENAME = 'biclusterFirstPrincComponents.csv'
 CLUSTER_GENES_PATH = 'output/cluster.members.genes.txt'
 CLUSTER_CONDS_PATH = 'output/cluster.members.conditions.txt'
 CLUSTER_EIGENGENES_PATH = 'output/biclusterEigengenes.csv'
 CLUSTER_VARIANCE_EXPLAINED_PATH = 'output/biclusterVarianceExplained.csv'
-PHENOTYPES_PATH = 'extras/phenotypes.csv'
+CM_PKL_PATH = 'output/c1_all.pkl'
 POSTPROCESS_PKL_PATH = 'output/postProcessed.pkl'
+POSTPROCESSED_FILENAME = 'postProcessed_gbmTCGA_pita.csv'
+
 ```
 
 ### Output and visualizations
