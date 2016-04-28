@@ -267,7 +267,7 @@ def phyper(q, m, n, k, lower_tail=False):
     """calls the R function phyper, input values are lists and returns a list"""
     r_phyper = robj.r['phyper']
     kwargs = {'lower.tail': lower_tail}
-    return [f for f in 
+    return [f for f in
             r_phyper(FloatVector(q), FloatVector(m), FloatVector(n), FloatVector(k), **kwargs)]
 
 
@@ -373,7 +373,7 @@ def miRNA_mappings(cfg):
     return mirna_ids, mirna_ids_rev
 
 
-def read_cmonkey_run(cfg):
+def read_cmonkey_run(cfg, entrez2id):
     """ Load cMonkey Object - turns cMonkey data into objects"""
     output_path = cfg.outdir_path('c1.pkl')
 
@@ -382,7 +382,10 @@ def read_cmonkey_run(cfg):
         c1 = cMonkeyWrapper(cfg['cmonkey-rundb'], meme_upstream=False, weeder_upstream=False,
                             weeder_3pUTR=False, tfbs_db=False,
                             pita_3pUTR=False,
-                            targetscan_3pUTR=False) #, geneConv=entrez2id)
+                            targetscan_3pUTR=False,
+                            promoterSeq=cfg['promoterSeq'],
+                            p3utrSeq=cfg['p3utrSeq'],
+                            geneConv=entrez2id)
 
         with open(output_path, 'wb') as pklFile:
             cPickle.dump(c1, pklFile)
@@ -410,7 +413,7 @@ def compute_upstream_motifs_meme(cfg, c1):
         # Use already run MEME results if they exist
         if not os.path.exists(pkl_path):
             # Make needed directories
-            cfg.clear_tmp()
+            #cfg.clear_tmp()
             cfg.create_tmpdir('meme/fasta')
 
             # Run MEME on all biclusters
@@ -420,7 +423,9 @@ def compute_upstream_motifs_meme(cfg, c1):
             # First make fasta files for all biclusters
             print 'Making Files for MEME Upstream run...'
             for cluster_num in c1.biclusters:
+                print cluster_num
                 seqs = c1.bicluster_seqs_upstream(cluster_num)
+                print len(seqs)
                 if len(seqs) > 0:
                     cluster_filename = cfg.tmpdir_path('meme/fasta/bicluster_%d.fasta' % cluster_num)
                     run_args.append((cluster_num, cluster_filename))
@@ -471,7 +476,7 @@ def __compute_motifs_weeder(cfg, pkl_path, biclusters, add_result, bicluster_seq
     global g_weeder_args, g_weeder_results
 
     if not os.path.exists(pkl_path):
-        cfg.clear_tmp()
+        #cfg.clear_tmp()
         cfg.create_tmpdir('weeder/fasta')
 
         # Run MEME on all biclusters
@@ -619,7 +624,7 @@ def __read_predictions(pred_path, pkl_path, genes_in_biclusters, manager):
         with open(pkl_path,'rb') as pklFile:
             tmp_dict = cPickle.load(pklFile)
             tmp_set = cPickle.load(pklFile)
-    
+
     pred_dict = manager.dict(tmp_dict)
     pred_total_targets = manager.list()
     pred_total_targets.append(set(tmp_set))
@@ -715,10 +720,10 @@ def compute_3pUTR_targetscan_set_enrichment(cfg, c1, mirna_ids):
         c1.targetscan_3pUTR = True
 
 
-def compute_additional_info(cfg, mirna_ids):
+def compute_additional_info(cfg, mirna_ids, entrez2id):
     cm_pkl_path = cfg.outdir_path('c1_all.pkl')
     if not os.path.exists(cm_pkl_path):
-        c1 = read_cmonkey_run(cfg)
+        c1 = read_cmonkey_run(cfg, entrez2id)
 
         ################################################################
         ## Fill in the missing parts                                  ##
@@ -806,7 +811,7 @@ def __read_ratios(cfg, c1):
 
     with open(cfg.outdir_path('cluster.members.genes.txt'), 'w') as outfile:
         for cluster_num in c1.biclusters:
-            outfile.write('%s %s\n' % (cluster_num, ' '.join(c1.biclusters[cluster_num].genes))) 
+            outfile.write('%s %s\n' % (cluster_num, ' '.join(c1.biclusters[cluster_num].genes)))
 
     print "dump cluster condition members"
     with open(cfg.outdir_path('cluster.members.conditions.txt'), 'w') as outfile:
@@ -904,7 +909,7 @@ def __tomtom_upstream_motifs(cfg):
     print 'Running TOMTOM on Upstream Motifs:'
 
     # Make needed directories
-    cfg.clear_tmp()
+    #cfg.clear_tmp()
     cfg.create_tmpdir('tomtom_out')
 
     pssms = c1.pssms_upstream()
@@ -932,7 +937,7 @@ def __tomtom_upstream_motifs(cfg):
                 utils.make_files(c1.nucFreqsUpstream, pssms.values(),
                                  target_pssms.values(), i)
 
-            # Run TomTom 
+            # Run TomTom
             print 'Comparing Upstream motifs against databases...'
             pool = Pool(processes=cpu_count())
             res1 = pool.map(run_tomtom, [i for i in range(len(target_pssms_in))])
@@ -1028,7 +1033,7 @@ def __correlate_tfs_with_cluster_eigengenes(cfg, c1):
     ## Filter expanded TFs through correlation with bicluster eigengenes ##
     #######################################################################
     print 'Correlate TFs with eigengenes...'
-    
+
     # Get microarray data
     exp_data = {}
     with open(cfg['all-ratios-file'], 'r') as infile:
@@ -1084,7 +1089,7 @@ def __expand_and_correlate_tfbsdb_tfs(c1, tf_name2entrezid, tf_families, exp_dat
                             if factor in family_factors:
                                 expanded_factors[factor] += family_factors
                         expanded_factors[factor] = list(set(expanded_factors[factor]))
-        
+
         # Push expanded TF factor list into the bicluster object
         if len(expanded_factors) > 0:
             print factor, expanded_factors
@@ -1137,7 +1142,7 @@ def __write_first_principal_components(cfg, c1):
 def __get_permuted_pvalues_for_upstream_meme_motifs(cfg, c1):
     cfg.clear_tmp()
     cfg.create_tmpdir('tomtom_out')
-    
+
     # Compare the random motifs to the original motif in TOMTOM
     permPValues = {}
     pssms = c1.pssms_upstream(de_novo_method='meme')
@@ -1154,7 +1159,7 @@ def __get_permuted_pvalues_for_upstream_meme_motifs(cfg, c1):
             stdout.flush()
             filepath = os.path.join(cfg['rand_pssms_dir'], 'pssms_upstream_%d.json' % i)
             randPssmsDict[i] = pssm_mod.load_pssms_json(filepath)
-            
+
             for pssm1 in randPssmsDict[i]:
                 randPssmsDict[i][pssm1].de_novo_method = 'meme'
             delMes = []
@@ -1343,7 +1348,7 @@ def __read_replication_pvalues(cfg, c1):
     It is hardcodes the dataset names and is inherently redundant. The way
     to go is to ensure uniform input and output formats and then use the same
     code to handle all data set types."""
-    # Read in replication p-values - French Dataset      
+    # Read in replication p-values - French Dataset
     # '','n.rows','overlap.rows','new.resid.norm.gbm','avg.norm.perm.resid.gbm','norm.perm.p.gbm','new.resid.norm.all','avg.norm.perm.resid.all','norm.perm.p.all','pc1.var.exp.gbm','avg.pc1.var.exp.gbm','pc1.perm.p.gbm','pc1.var.exp.all','avg.pc1.var.exp.all','pc1.perm.p.all','survival.gbm','survival.p.gbm','survival.age.gbm','survival.age.p.gbm','survival.all','survival.p.all','survival.age.all','survival.age.p.all'
     print 'Loading replication p-values...'
     with open(cfg.outdir_path('replicationPvalues_French.csv'), 'r') as infile:
@@ -1354,7 +1359,7 @@ def __read_replication_pvalues(cfg, c1):
             bicluster.add_attribute(key='replication_French',value={'French_new.resid.norm':splitUp[3], 'French_avg.resid.norm':splitUp[4], 'French_norm.perm.p':splitUp[5], 'French_pc1.var.exp':splitUp[9], 'French_avg.pc1.var.exp':splitUp[10], 'French_pc1.perm.p':splitUp[11], 'French_survival':splitUp[15], 'French_survival.p':splitUp[16], 'French_survival.age':splitUp[17], 'French_survival.age.p':splitUp[18]})
             bicluster.add_attribute(key='replication_French_all',value={'French_all_new.resid.norm':splitUp[6], 'French_all_avg.resid.norm':splitUp[7], 'French_all_norm.perm.p':splitUp[8], 'French_all_pc1.var.exp':splitUp[12], 'French_all_avg.pc1.var.exp':splitUp[13], 'French_all_pc1.perm.p':splitUp[14], 'French_all_survival':splitUp[19], 'French_all_survival.p':splitUp[20], 'French_all_survival.age':splitUp[21], 'French_all_survival.age.p':splitUp[22]})
 
-    # Read in replication p-values - REMBRANDT Dataset      
+    # Read in replication p-values - REMBRANDT Dataset
     # "","n.rows","orig.resid","orig.resid.norm","overlap.rows","new.resid","avg.perm.resid","perm.p","new.resid.norm","avg.norm.perm.resid","norm.perm.p","survival","survival.p","survival.age","survival.age.p"
     with open(cfg.outdir_path('replicationPvalues_REMBRANDT.csv'), 'r') as infile:
         infile.readline()
@@ -1516,7 +1521,7 @@ def write_neo_summary(cfg):
     for dir1 in os.listdir(cfg.outdir_path('causality')):
         # For each regulator
         if dir1[0:7]=='causal_':
-            # For each 
+            # For each
             for file1 in os.listdir(cfg.outdir_path('causality/%s' % dir1)):
                 if file1[0:3]=='sm.':
                     with open(cfg.outdir_path('causality/%s/%s' % (dir1, file1)), 'r') as inFile:
@@ -1892,13 +1897,7 @@ def write_final_result(cfg, c1, mirna_ids_rev):
          ['3pUTR.WEEDER Motif2 E-Value', '3pUTR.WEEDER Motif2 Perm. P-Value', '3pUTR.WEEDER Motif2 Perm. P-Value (All)', '3pUTR.WEEDER Motif2 Consensus', '3pUTR.WEEDER Motif2 Matches', '3pUTR.WEEDER Motif2 Model'] + \
          ['3pUTR_pita.miRNAs', '3pUTR_pita.percTargets', '3pUTR_pita.pValue'] + \
          ['3pUTR_targetScan.miRNAs', '3pUTR_targetScan.percTargets', '3pUTR_targetScan.pValue'] + \
-         ['Correspondent.TFs', 'Correspondent.miRNAs'] + \
-         #['Age', 'Age.p', 'Sex', 'Sex.p', 'Chemotherapy', 'Chemotherapy.p', 'RadiationTherapy', 'RadiationTherapy.p', 'Survival', 'Survival.p', 'Survial.covAge', 'Survival.covAge.p'] + \
-         #['French_pc1.var.exp','French_avg.pc1.var.exp','French_pc1.perm.p','French_survival','French_survival.p','French_survival.age','French_survival.age.p', 'French_all_pc1.var.exp','French_all_avg.pc1.var.exp','French_all_pc1.perm.p','French_all_survival','French_all_survival.p','French_all_survival.age','French_all_survival.age.p'] + \
-         #['REMBRANDT_pc1.var.exp','REMBRANDT_avg.pc1.var.exp','REMBRANDT_pc1.perm.p','REMBRANDT_survival','REMBRANDT_survival.p','REMBRANDT_survival.age','REMBRANDT_survival.age.p', 'REMBRANDT_all_pc1.var.exp','REMBRANDT_all_avg.pc1.var.exp','REMBRANDT_all_pc1.perm.p','REMBRANDT_all_survival','REMBRANDT_all_survival.p','REMBRANDT_all_survival.age','REMBRANDT_all_survival.age.p'] + \
-         #['GSE7696_pc1.var.exp','GSE7696_avg.pc1.var.exp','GSE7696_pc1.perm.p','GSE7696_survival','GSE7696_survival.p','GSE7696_survival.age','GSE7696_survival.age.p'] + \
-         ['GO_Term_BP'] + \
-         #[i.strip() for i in hallmarksOfCancer]
+         ['Correspondent.TFs', 'Correspondent.miRNAs','GO_Term_BP']
         postFinal.write(','.join(header)+'\n'+'\n'.join([','.join(i) for i in postOut]))
 
     print 'Done.\n'
@@ -1909,7 +1908,7 @@ if __name__ == '__main__':
 
     entrez2id = read_synonyms(cfg)
     mirna_ids, mirna_ids_rev = miRNA_mappings(cfg)
-    c1 = compute_additional_info(cfg, mirna_ids)
+    c1 = compute_additional_info(cfg, mirna_ids, entrez2id)
     c1 = perform_postprocessing(cfg, c1, entrez2id, mirna_ids)
     #run_neo(cfg)
     #causal_summary = write_neo_summary(cfg)
