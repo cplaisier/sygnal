@@ -4,7 +4,7 @@ We developed the SYstems Genetic Network AnaLysis (SYGNAL) pipeline to integrate
 The SYGNAL pipeline is designed to be cloned into a completed [cMonkey<sub>2</sub>](https://github.com/baliga-lab/cmonkey2) run directory. It will then run the SYGNAL pipeline using the cMonkey<sub>2</sub> result database and put all the results into 'sygnal/output' directory, which it will create if not already present. There is fairly through checkpointing as the full SYGNAL pipeline can take some time to run.
 
 ### Dependencies
-## Applications
+#### Applications
 * MEME (http://meme-suite.org/doc/download.html?man_type=web)
 * WEEDER (https://github.com/baliga-lab/weeder_patched)
 * R (https://cran.r-project.org/)
@@ -18,7 +18,7 @@ sudo pip install rpy
 ```
 All other programs will have to installed using their installers and following instructions from those software.
 
-## R Dependencies
+#### R Dependencies
 install.packages(c('WGCNA','impute','getopt','topGO','org.Mm.eg.db','org.Hs.eg.db','GOSim','multicore'))
 
 ### Required data files
