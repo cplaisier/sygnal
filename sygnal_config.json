@@ -4,7 +4,7 @@
             ],
 
     "subsets_pos": {
-            "all": [0, 422]
+            "all": [0, 28]
             },
     
     "max-evalue": 10.0,
@@ -16,12 +16,13 @@
 
     "synonyms-file": "../synonymThesaurus.csv.gz",
     "phenotypes-file": "extras/phenotypes.csv",
-    "ratios-file": "../gbmTCGA_exprMat_medianFiltered.tsv",
-    "all-ratios-file": "expression/gbmTCGA_exprMat.tsv",
+    "ratios-file": "../gexp_cMonkey_norm.tsv",
+    "all-ratios-file": "expression/gexp_cMonkey_norm_all.tsv",
     "mirna-fasta-file": "miRNA/mmu.mature.fa",
     "rand_pssms_dir": "randPSSMs",
     "promoterSeq": "seqs/promoterSeqs_Mus_musculus.csv.gz",
     "p3utrSeq": "seqs/p3utrSeqs_Mus_musculus.csv.gz",
+    "gene_conv": "extras/entrez2ucsc.csv",
 
     "replication-dataset-names": [],
 
@@ -57,7 +58,7 @@
             },
     
     "tfExpansion": { "tfs": "TF/mouseTFs_All.csv",
-                     "tfFamilies": "tfFamilies_musculus.csv"
+                     "tfFamilies": "TF/tfFamilies_musculus.csv"
             },
 
     "mirvestigator": { "seedModel": [6,7,8],

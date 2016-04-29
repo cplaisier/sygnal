@@ -135,7 +135,7 @@ def weeder(bicluster, seqfile, bgfile, size, enriched, revcomp):
     weeder_args = "%s %s %s %s" % (seqfile, bgfile, size, enriched)
     if revcomp:
         weeder_args += ' S'
-    errout = open('tmp/weeder/stderr.out','w')
+    errout = open(cfg['tmpdir']+'/weeder/stderr.out','w')
     weeder_proc = Popen("weederlauncher %s" % weeder_args, shell=True, stdout=PIPE, stderr=errout)
     output = weeder_proc.communicate()
 
@@ -252,9 +252,9 @@ def tomtom(num, dist_meth='ed', q_thresh=1, min_overlap=6):
     args = '-dist %s -o tmp/tomtom_out -text -thresh %d -min-overlap %d -verbosity 1 tmp/query%d.tomtom tmp/target%d.tomtom' % (dist_meth, q_thresh, min_overlap, num, num)
     print args
 
-    with open('tmp/stderr_%d.out' % num,'w') as errout:
+    with open(cfg['tmpdir']+'/stderr_%d.out' % num,'w') as errout:
         tomtom_proc = Popen("tomtom %s" % args, shell=True, stdout=PIPE, stderr=errout)
-        with open('tmp/tomtom_out/tomtom%d.out' % num, 'w') as outfile:
+        with open(cfg['tmpdir']+'/tomtom_out/tomtom%d.out' % num, 'w') as outfile:
             output = tomtom_proc.communicate()[0]
             outfile.write(output)
 
@@ -777,23 +777,24 @@ def post_process(cluster_num):
     # Get first principal component variance explained
     fpc = bicluster.attributes['pc1']
 
-    # Corrleation with patient traits
-    cleanNames = dict(zip([clean_name(i) for i in conditions], conditions))
-    cond2 = set(cleanNames.keys()).intersection(g_phenotypes['SURVIVAL'].keys())
-    pc1_1 = [fpc[cleanNames[i]] for i in cond2]
+    if not g_phenotypes=='NA':
+        # Corrleation with patient traits
+        cleanNames = dict(zip([clean_name(i) for i in conditions], conditions))
+        cond2 = set(cleanNames.keys()).intersection(g_phenotypes['SURVIVAL'].keys())
+        pc1_1 = [fpc[cleanNames[i]] for i in cond2]
 
-    for phenotype in ['AGE', 'SEX.bi', 'chemo_therapy', 'radiation_therapy']:
-        p1_1 = [g_phenotypes[phenotype][i] for i in cond2]
-        cor1 = correlation(pc1_1, p1_1)
-        attributes[phenotype] = dict(zip(['rho', 'pValue'], cor1))
+        for phenotype in ['AGE', 'SEX.bi', 'chemo_therapy', 'radiation_therapy']:
+            p1_1 = [g_phenotypes[phenotype][i] for i in cond2]
+            cor1 = correlation(pc1_1, p1_1)
+            attributes[phenotype] = dict(zip(['rho', 'pValue'], cor1))
 
-    # Association of bicluster expression with patient survival
-    surv = [g_phenotypes['SURVIVAL'][i] for i in cond2]
-    dead = [g_phenotypes['DEAD'][i] for i in cond2]
-    age = [g_phenotypes['AGE'][i] for i in cond2]
-    s1 = survival(surv, dead, pc1_1, age)
-    attributes['Survival'] = dict(zip(['z', 'pValue'], s1[0]))
-    attributes['Survival.AGE'] = dict(zip(['z', 'pValue'], s1[1]))
+        # Association of bicluster expression with patient survival
+        surv = [g_phenotypes['SURVIVAL'][i] for i in cond2]
+        dead = [g_phenotypes['DEAD'][i] for i in cond2]
+        age = [g_phenotypes['AGE'][i] for i in cond2]
+        s1 = survival(surv, dead, pc1_1, age)
+        attributes['Survival'] = dict(zip(['z', 'pValue'], s1[0]))
+        attributes['Survival.AGE'] = dict(zip(['z', 'pValue'], s1[1]))
 
     return attributes
 
@@ -827,7 +828,7 @@ def __get_cluster_eigengenes(cfg, c1):
     if not os.path.exists(cluster_eigengenes_path):
         ret = subprocess.check_call(['./getEigengene.R',
                                      '-r', cfg['ratios-file'],
-                                     '-o', 'output'],
+                                     '-o', cfg['outdir']],
                                     stderr=subprocess.STDOUT)
         if ret == 1:
             print "could not create Eigengenes"
@@ -1232,7 +1233,7 @@ def __run_mirvestigator_3putr(cfg, c1):
         seqs3pUTR = c1.seqs3pUTR.values()
         m2m = miRvestigator(pssms.values(), seqs3pUTR, seedModel=cfg['mirvestigator']['seedModel'],
                             minor=bool(cfg['mirvestigator']['minor']), p5=bool(cfg['mirvestigator']['p5']), p3=bool(cfg['mirvestigator']['p3']), wobble=bool(cfg['mirvestigator']['wobble']),
-                            wobbleCut=cfg['mirvestigator']['wobbleCut'], baseDir='output', species=cfg['mirvestigator']['species'])
+                            wobbleCut=cfg['mirvestigator']['wobbleCut'], baseDir=cfg['outdir'], species=cfg['mirvestigator']['species'])
         with open(pkl_path, 'wb') as outfile:
             cPickle.dump(m2m, outfile)
     else:
@@ -1389,7 +1390,8 @@ def __make_permuted_pvalues(cfg, c1):
     if not os.path.exists(pvalues_path):
         print 'Calculating FPC permuted p-values...'
         ret = subprocess.check_call(['./permutedResidualPvalues_permAll_mc.R',
-                                     '-b', '..'],
+                                     '-o', cfg['outdir'],
+                                     '-r', cfg['ratios-file']],
                                     stderr=subprocess.STDOUT)
         if ret == 1:
             print "error in calling R script."
@@ -1412,14 +1414,14 @@ def __make_permuted_pvalues(cfg, c1):
     print 'Done.\n'
 
 
-def __make_functional_enrichment_and_go_term_similarity(cfg, c1):
+def __make_functional_enrichment(cfg, c1):
     #################################################################
     ## Run functional enrichment                                   ##
     #################################################################
     # Note that these are external to the project and have hard-coded paths !!!
     if not os.path.exists(cfg.outdir_path('biclusterEnrichment_GOBP.csv')):
         print 'Run functional enrichment...'
-        ret = subprocess.check_call("cd funcEnrichment && Rscript enrichment.R -o %s" % cfg.outdir,
+        ret = subprocess.check_call("Rscript funcEnrichment/enrichment.R -o "+cfg['outdir']+" -g "+cfg['gene_conv'],
                                     stderr=subprocess.STDOUT, shell=True)
         if ret == 1:
             raise Exception('could not run functional enrichment')
@@ -1472,7 +1474,8 @@ def perform_postprocessing(cfg, c1, entrez2id, mirna_ids):
         ratios = __read_ratios(cfg, c1)
         __get_cluster_eigengenes(cfg, c1)
         __get_cluster_variance_explained(cfg, c1)
-        phenotypes = __get_phenotype_info(cfg, c1)
+        #phenotypes = __get_phenotype_info(cfg, c1)
+        phenotypes = 'NA'
         __do_postprocess(cfg.outdir_path('postProcessed.pkl'), c1, ratios, phenotypes)
         __tomtom_upstream_motifs(cfg)
         tf_name2entrezid, tf_families = __expand_tf_factor_list(entrez2id)
