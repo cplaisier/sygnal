@@ -19,8 +19,20 @@ sudo pip install rpy
 All other programs will have to installed using their installers and following instructions from those software.
 
 #### R Dependencies
-install.packages(c('WGCNA','impute','getopt','topGO','org.Mm.eg.db','org.Hs.eg.db','GOSim','multicore'))
+* WGCNA
+* impute
+* getopt
+* topGO
+* org.Hs.eg.db or org.Mm.eg.db depending on species
+* GOSim
+* multicore
 
+Make sure to set your repositories to include the Bioconductor repositories with setRepositories() and install the apporiate packages through the commands below (you will also have to select the closest mirror as well):
+
+```
+setRepositories()
+install.packages(c('WGCNA','impute','getopt','topGO','org.Mm.eg.db','org.Hs.eg.db','GOSim','multicore'))
+```
 ### Required data files
 As described the SYGNAL pipeline requires user supplied data for patient expression profiles and patient clinical information. It can be run in a modified form without clinical information. Expression data is usually filtered based on differential expression, most variant genes, or expression above a threshold. The reason for this step is that genes with little variance or low expression are not likely to yield much information.
 
