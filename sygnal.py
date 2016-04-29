@@ -1092,8 +1092,8 @@ def __expand_and_correlate_tfbsdb_tfs(c1, tf_name2entrezid, tf_families, exp_dat
                         expanded_factors[factor] = list(set(expanded_factors[factor]))
 
         # Push expanded TF factor list into the bicluster object
-        if len(expanded_factors) > 0:
-            print factor, expanded_factors
+        #if len(expanded_factors) > 0:
+        #    print factor, expanded_factors
         bicluster.add_attribute('tfbs_db_expanded', expanded_factors)
 
     # [rho, pValue] = correlation(a1,a2)
@@ -1115,7 +1115,7 @@ def __expand_and_correlate_tfbsdb_tfs(c1, tf_name2entrezid, tf_families, exp_dat
                                                 for i in all_names][cfg['subsets_pos'][subset][0]:cfg['subsets_pos'][subset][1]],
                                                [exp_data[factor2][i]
                                                 for i in all_names][cfg['subsets_pos'][subset][0]:cfg['subsets_pos'][subset][1]])
-                            print cor1
+                            #print cor1
                             if corMax==[] or abs(cor1[0])>abs(corMax[0]):
                                 corMax = cor1
                         if not corMax==[]:
@@ -1421,7 +1421,7 @@ def __make_functional_enrichment(cfg, c1):
     # Note that these are external to the project and have hard-coded paths !!!
     if not os.path.exists(cfg.outdir_path('biclusterEnrichment_GOBP.csv')):
         print 'Run functional enrichment...'
-        ret = subprocess.check_call("Rscript funcEnrichment/enrichment.R -o "+cfg['outdir']+" -g "+cfg['gene_conv'],
+        ret = subprocess.check_call("./enrichment.R -o "+cfg['outdir']+" -c "+cfg['gene_conv'],
                                     stderr=subprocess.STDOUT, shell=True)
         if ret == 1:
             raise Exception('could not run functional enrichment')
@@ -1450,7 +1450,7 @@ def __make_go_term_similarity(cfg, c1):
 
     if not os.path.exists(cfg.outdir_path('jiangConrath_hallmarks.csv')):
         print 'Run semantic similarity...'
-        ret = subprocess.check_call("cd funcEnrichment && Rscript goSimHallmarksOfCancer.R -o %s" % cfg.outdir,
+        ret = subprocess.check_call("Rscript goSimHallmarksOfCancer.R -o %s" % cfg.outdir,
                                     stderr=subprocess.STDOUT, shell=True)
         if ret == 1:
             raise Exception('could not run semantic similarity')
@@ -1915,5 +1915,5 @@ if __name__ == '__main__':
     c1 = perform_postprocessing(cfg, c1, entrez2id, mirna_ids)
     #run_neo(cfg)
     #causal_summary = write_neo_summary(cfg)
-    add_correspondent_regulators(cfg, c1, causal_summary, mirna_ids_rev)
+    #add_correspondent_regulators(cfg, c1, causal_summary, mirna_ids_rev)
     write_final_result(cfg, c1, mirna_ids_rev)

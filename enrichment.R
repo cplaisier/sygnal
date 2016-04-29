@@ -1,10 +1,13 @@
+#!/usr/bin/env Rscript
 suppressMessages(library(topGO))
 suppressMessages(library('org.Mm.eg.db'))
+suppressMessages(library('getopt'))
+
 
 # read command line arguments
 spec = matrix(c(
   'outdir', 'o', 1, 'character',
-  'gene_conv', 'g', 1, 'character',
+  'gene_conv', 'c', 1, 'character',
   'help', 'h', 0, 'logical'
 ), byrow=TRUE, ncol=4)
 
