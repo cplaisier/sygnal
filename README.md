@@ -4,6 +4,7 @@ We developed the SYstems Genetic Network AnaLysis (SYGNAL) pipeline to integrate
 The SYGNAL pipeline is designed to be cloned into a completed [cMonkey<sub>2</sub>](https://github.com/baliga-lab/cmonkey2) run directory. It will then run the SYGNAL pipeline using the cMonkey<sub>2</sub> result database and put all the results into 'sygnal/output' directory, which it will create if not already present. There is fairly through checkpointing as the full SYGNAL pipeline can take some time to run.
 
 ### Dependencies
+#### Applications
 * MEME (http://meme-suite.org/doc/download.html?man_type=web)
 * WEEDER (https://github.com/baliga-lab/weeder_patched)
 * R (https://cran.r-project.org/)
@@ -17,6 +18,21 @@ sudo pip install rpy
 ```
 All other programs will have to installed using their installers and following instructions from those software.
 
+#### R Dependencies
+* WGCNA
+* impute
+* getopt
+* topGO
+* org.Hs.eg.db or org.Mm.eg.db depending on species
+* GOSim
+* multicore
+
+Make sure to set your repositories to include the Bioconductor repositories with setRepositories() and install the apporiate packages through the commands below (you will also have to select the closest mirror as well):
+
+```
+setRepositories()
+install.packages(c('WGCNA','impute','getopt','topGO','org.Mm.eg.db','org.Hs.eg.db','GOSim','multicore'))
+```
 ### Required data files
 As described the SYGNAL pipeline requires user supplied data for patient expression profiles and patient clinical information. It can be run in a modified form without clinical information. Expression data is usually filtered based on differential expression, most variant genes, or expression above a threshold. The reason for this step is that genes with little variance or low expression are not likely to yield much information.
 
