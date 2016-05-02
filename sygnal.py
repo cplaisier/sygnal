@@ -1409,8 +1409,8 @@ def __make_permuted_pvalues(cfg, c1):
         for line in infile:
             splitUp = line.strip().split(',')
             bicluster = c1.biclusters[int(splitUp[0].strip('"'))]
-            bicluster.add_attribute(key='resid.norm.perm.p',value=str(splitUp[9]))
-            bicluster.add_attribute(key='pc1.perm.p',value=str(splitUp[12]))
+            bicluster.add_attribute(key='resid.norm.perm.p',value=str(splitUp[10]))
+            bicluster.add_attribute(key='pc1.perm.p',value=str(splitUp[13]))
     print 'Done.\n'
 
 
