@@ -49,6 +49,7 @@ The SYGNAL pipeline requires user supplied data for patient expression profiles 
 
 In addition to user supplied expression data and clinical data the pipeline requires additional information in order to run:
 * Gene ID thesaurus - a CSV file with the following format:
+
 | ExprIDs  | Mappings               |
 |:--------:|:----------------------:|
 | Gene_1   | Gene_1;Alt_1;...;Alt_N |
