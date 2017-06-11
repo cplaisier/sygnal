@@ -33,17 +33,43 @@ Make sure to set your repositories to include the Bioconductor repositories with
 setRepositories()
 install.packages(c('WGCNA','impute','getopt','topGO','org.Mm.eg.db','org.Hs.eg.db','GOSim','multicore'))
 ```
+
+In order to run the causality analysis portions of SYGNAL requires the use of the Network Edge Orienting (NEO) package which can be found here:  https://labs.genetics.ucla.edu/horvath/aten/NEO/  The 'neoDecember2015.txt' is the source code needed for running NEO in SYGNAL.
+
 ### Required data files
-As described the SYGNAL pipeline requires user supplied data for patient expression profiles and patient clinical information. It can be run in a modified form without clinical information. Expression data is usually filtered based on differential expression, most variant genes, or expression above a threshold. The reason for this step is that genes with little variance or low expression are not likely to yield much information.
+The SYGNAL pipeline requires user supplied data for patient expression profiles and patient clinical information. It can be run in a modified form without clinical information. Expression data is usually filtered based on differential expression, most variant genes, or expression above a threshold. The reason for this step is that genes with little variance or low expression are not likely to yield much information.
+
+* User supplied expression data (microarray or RNAseq) as a tab separated value (TSV) file that has been properly normalized. The expression data should be standardized (mean subtracted and divided by the standard deviation to turn each expression value into a Z score). The header for the expression data is expected to be without the leading tab.
+
+| Cond_1  | ...    | Cond_N   |        |
+|:-------:|:------:|:--------:|:------:|
+| Gene_1  | Z[1,1] | ...      | Z[1,N] |
+| ...     | ...    | ...      | ...    |
+| Gene_M  | Z[M,1] | Z[M,N-1] | Z[M,N] |
 
 In addition to user supplied expression data and clinical data the pipeline requires additional information in order to run:
-* Gene ID thesaurus
-* TF-target gene regulatory interactions in JSON format
-* TF family information
-* miRNA-target gene regulatory interactions in JSON format
+* Gene ID thesaurus - a CSV file with the following format:
+| ExprIDs  | Mappings               |
+|:--------:|:----------------------:|
+| Gene_1   | Gene_1;Alt_1;...;Alt_N |
+| ...      | ...;Alt_1;...;Alt_N    |
+| Gene_M   | Gene_M;Alt_1;...;Alt_N |
+
+* TF-target gene regulatory interactions (http://tfbsdb.systemsbiology.net/) in the following JSON format:
+```
+{"TF_ID_1": ["Gene_1", ..., "Gene_M"], ..., "TF_ID_N": ["Gene_1", ..., "Gene_M"]}
+```
+
+* TF family information (http://tfclass.bioinf.med.uni-goettingen.de/tfclass)
+* miRNA-target gene regulatory interactions (https://genie.weizmann.ac.il/pubs/mir07/mir07_data.html; http://www.targetscan.org/vert_71/) in the following JSON format:
+```
+{"miRNA_ID_1": ["Gene_1", ..., "Gene_M"], ..., "miRNA_ID_N": ["Gene_1", ..., "Gene_M"]}
+```
+
 * Full expression data including all genes (for TF correlations)
+
 * Expression data and clinical information for replication studies
-* Promoter and 3' UTR sequences for organism of study
+* Promoter and 3' UTR sequences for organism of study ()
 * Background sequence information for motif callers
 
 ### List of parameters
