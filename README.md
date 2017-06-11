@@ -74,18 +74,16 @@ In addition to user supplied expression data and clinical data the pipeline requ
 * Background sequence information for motif callers
 
 ### List of parameters
-####TF target-gene database construction				
+#### TF target-gene database construction				
 ```
 tomtom	(4.11.1)	-dist ed -o tmp/tomtom_out -text -thresh 0.001 -min-overlap 6		
 fimo	(4.11.1)	--max-stored-scores 1000000 --verbosity 4 --bgfile bgFile.meme -text --thresh 1e-5 		
 ```				
-
-####SYGNAL pipeline
+#### SYGNAL pipeline
 
 ```
 ./sygnal.py [--config <cfg.json>] [--out <output-dir>] [--tmp <tmp-dir>] <cmonkey2-rundb>
 ```
-
 ### Configuration
 
 The SYGNAL pipeline is configured by editing the parameters in the file sygnal_config.json.
@@ -94,10 +92,81 @@ The SYGNAL pipeline is configured by editing the parameters in the file sygnal_c
 
 ```
 {
+    "max-evalue": 10.0,
+    "rho-cut": 0.3,
+    "pvalue-cut": 0.05,
+    "perc-targets": 0.1,
+    "leo-nb-atob": 0.5,
+    "mlogp-m-atob": 0.05,
+
+    "run-neo": true,
+
+    "synonyms-file": "/proj/omics4tb/cplaisier/cMonkey/meso/commonFiles/synonymsThesaurus.csv.gz",
+    "phenotypes-file": "/proj/omics4tb/cplaisier/cMonkey/meso/commonFiles/phenotypes_meso.csv",
+    "ratios-file": "/proj/omics4tb/cplaisier/cMonkey/meso/exprs/mesothelioma_norm_cv_z.tsv",
+    "all-ratios-file": "/proj/omics4tb/cplaisier/cMonkey/meso/exprs_all/mesothelioma_norm.csv",
+    "som-muts-file": "/proj/omics4tb/cplaisier/cMonkey/meso/som_muts/somaticMutationsMatrix.csv",
+    "mirna-fasta-file": "miRNA/hsa.mature.fa",
+    "rand_pssms_dir": "randPSSMs",
+    "promoterSeq": "seqs/promoterSeqs_Homo_sapiens.csv.gz",
+    "p3utrSeq": "seqs/p3utrSeqs_Homo_sapiens.csv.gz",
+    "gene_conv": "extras/entrez2ucsc.csv",
+    "replication-dataset-names": ["mesoTCGA"],
+    
+    "pita": "/proj/omics4tb/cplaisier/cMonkey/meso/commonFiles/pita_miRNA_sets_entrez_hsa.json",
+    "targetscan": "/proj/omics4tb/cplaisier/cMonkey/meso/commonFiles/targetScan_miRNA_sets_entrez_hsa.json",
+    "tfbsdb": "/proj/omics4tb/cplaisier/cMonkey/meso/commonFiles/tfbsDb_plus_and_minus_5000_entrez.json",
+
+    "meme":  { "upstream": {
+                    "nmotifs": 2,
+                    "motif-widths": [6, 12],
+                    "revcomp": "True",
+                    "bgfile": "seqs/bgFile.meme"
+                }
+            },
+    
+    "weeder": { "upstream": {
+                    "bgfile": "HS",
+                    "size": "small",
+                    "enriched": "T50",
+                    "revcomp": "True"
+                },
+                "3pUTR": {
+                    "bgfile": "HS3P",
+                    "size": "small",
+                    "enriched": "T50",
+                    "revcomp": "False"
+                }
+            },
+
+    "tomtom": { "upstream":
+                {
+                    "motif-files": ["/proj/omics4tb/cplaisier/cMonkey/meso/commonFiles/jasparCoreVertebrata_redundant.json",
+                            "/proj/omics4tb/cplaisier/cMonkey/meso/commonFiles/transfac_2012.1_PSSMs_vertabrate.json",
+                            "/proj/omics4tb/cplaisier/cMonkey/meso/commonFiles/uniprobePSSMsNonRedundant.json",
+                            "/proj/omics4tb/cplaisier/cMonkey/meso/commonFiles/selexPSSMsNonRedundant.json"]
+                }
+            },
+    
+    "tfExpansion": { "tfs": "TF/humanTFs_All.csv",
+                     "tfFamilies": "TF/tfFamilies.csv"
+            },
+
+    "mirvestigator": { "seedModel": [6,7,8],
+                       "minor": "True",
+                       "minor": "True",
+                       "p5": "True",
+                       "p3": "True",
+                       "wobble": "False",
+                       "wobbleCut": 0.25,
+                       "species": "hsa"
+    },
+    
+    "first-principal-comps-result-file": "biclusterFirstPrincComponents.csv"
 }
 ```
 
-#####Motif searching
+##### Motif searching
 ```
 meme	(4.11.1)	 -bfile bgFile.meme -nostatus -text -time 600 -dna -maxsize 9999999 -evt 1e9 -mod zoops -minw 6 -maxw 12 -nmotifs 2		
 weederlauncher	(1.4.2 ISB Patch)	HS small T50 S	For upstream seqeunce searching.	
