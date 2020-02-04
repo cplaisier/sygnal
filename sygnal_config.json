@@ -1,30 +1,28 @@
 {
-    "subsets": [
-            "all"
-            ],
-
-    "subsets_pos": {
-            "all": [0, 28]
-            },
-    
     "max-evalue": 10.0,
-    "rho-cut": 0.3,
+    "rho-cut": 0.2,
     "pvalue-cut": 0.05,
     "perc-targets": 0.1,
     "leo-nb-atob": 0.5,
     "mlogp-m-atob": 0.05,
 
-    "synonyms-file": "../synonymThesaurus.csv.gz",
-    "phenotypes-file": "extras/phenotypes.csv",
-    "ratios-file": "../gexp_cMonkey_norm.tsv",
-    "all-ratios-file": "expression/gexp_cMonkey_norm_all.tsv",
-    "mirna-fasta-file": "miRNA/mmu.mature.fa",
-    "rand_pssms_dir": "randPSSMs",
-    "promoterSeq": "seqs/promoterSeqs_Mus_musculus.csv.gz",
-    "p3utrSeq": "seqs/p3utrSeqs_Mus_musculus.csv.gz",
-    "gene_conv": "extras/entrez2ucsc.csv",
+    "run-neo": false,
 
+    "synonyms-file": "../../../commonFiles/synonymsThesaurus.csv.gz",
+    "phenotypes-file": "NA",
+    "ratios-file": "../../../exprs/gexp_cMonkey_norm.tsv",
+    "all-ratios-file": "../../../exprs_all/gexp_cMonkey_norm_All.csv",
+    "mirna-fasta-file": "miRNA/hsa.mature.fa",
+    "rand_pssms_dir": "randPSSMs",
+    "promoterSeq": "seqs/promoterSeqs_Homo_sapiens.csv.gz",
+    "p3utrSeq": "seqs/p3utrSeqs_Homo_sapiens.csv.gz",
+    "gene_conv": "extras/entrez2ucsc.csv",
     "replication-dataset-names": [],
+    "subsets-file": "../../../subsets/subsets.json",
+    "subsets_order": ["C"],
+    "pita": "../../../commonFiles/pita_miRNA_sets_entrez_hsa.json",
+    "targetscan": "../../../commonFiles/targetScan_miRNA_sets_entrez_hsa.json",
+    "tfbsdb": "../../../commonFiles/tfbsDb_plus_and_minus_5000_entrez.json",
 
     "meme":  { "upstream": {
                     "nmotifs": 2,
@@ -35,13 +33,13 @@
             },
     
     "weeder": { "upstream": {
-                    "bgfile": "MM",
+                    "bgfile": "HS",
                     "size": "small",
                     "enriched": "T50",
                     "revcomp": "True"
                 },
                 "3pUTR": {
-                    "bgfile": "MM3P",
+                    "bgfile": "HS3P",
                     "size": "small",
                     "enriched": "T50",
                     "revcomp": "False"
@@ -50,15 +48,15 @@
 
     "tomtom": { "upstream":
                 {
-                    "motif-files": ["motifs/jasparCoreVertebrata_redundant.json",
-                            "motifs/transfac_2012.1_PSSMs_vertabrate.json",
-                            "motifs/uniprobePSSMsNonRedundant.json",
-                            "motifs/selexPSSMsNonRedundant.json"]
+                    "motif-files": ["../../../commonFiles/jasparCoreVertebrata_redundant.json",
+                            "../../../commonFiles/transfac_2012.1_PSSMs_vertabrate.json",
+                            "../../../commonFiles/uniprobePSSMsNonRedundant.json",
+                            "../../../commonFiles/selexPSSMsNonRedundant.json"]
                 }
             },
     
-    "tfExpansion": { "tfs": "TF/mouseTFs_All.csv",
-                     "tfFamilies": "TF/tfFamilies_musculus.csv"
+    "tfExpansion": { "tfs": "TF/humanTFs_All.csv",
+                     "tfFamilies": "TF/tfFamilies.csv"
             },
 
     "mirvestigator": { "seedModel": [6,7,8],
@@ -68,9 +66,8 @@
                        "p3": "True",
                        "wobble": "False",
                        "wobbleCut": 0.25,
-                       "species": "mmu"
+                       "species": "hsa"
     },
     
-    "postprocessing-result-file": "postProcessed_gbmTCGA_pita.csv",
-    "first-principal-comps-result-file": "biclusterFirstPrincComponents.csv"
+    "first-principal-comps-result-file": "biclusterFirstPrincComponents"
 }

@@ -353,11 +353,10 @@ class miRvestigator:
             if not miRNALine:
                 break
             # Get the miRNA name
-            curMiRNA = (miRNALine.lstrip('>').split(' '))[0]
-            if (curMiRNA.split('-'))[0]==self.species:
-                if (minor==True or curMiRNA.find('*')==-1) and (p5==True or curMiRNA.find('-5p')==-1) and (p3==True or curMiRNA.find('-3p')==-1):
-                    # Now grab out the 2-8bp and do reverse complement on it
-                    miRNAs[curMiRNA] = self.reverseComplement((seqLine.strip())[seedStart:seedEnd])
+            if miRNALine[0:4]=='>hsa':
+                # Now grab out the 2-8bp and do reverse complement on it
+                curMiRNA = miRNALine.split(' ')[1]
+                miRNAs[curMiRNA] = self.reverseComplement((seqLine.strip())[seedStart:seedEnd])
         miRNAFile.close()
 
         # How many distinct kMers in miRNAs
